@@ -82,7 +82,7 @@ float4 fs_main(SpriteVarying input) : SV_Target {
     SceneUniforms scene = get_scene();
 
     float2 uv = fmod(input.tile_uv, input.tile_size) + input.atlas_uv;
-    float4 atlas_sample = wall_atlas().Sample(nearest_samp(), uv / scene.atlas_size);
+    float2 atlas_sample = wall_atlas().Sample(nearest_samp(), uv / scene.atlas_size);
 
     if (atlas_sample.g > 0.5) {
         discard;

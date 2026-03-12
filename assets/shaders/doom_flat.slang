@@ -26,8 +26,8 @@ float4 fs_main(StaticVarying input) : SV_Target {
 
     float2 uv = fmod(input.tile_uv, input.tile_size) + input.atlas_uv;
 
-    // Flat atlas is R8_UNORM — .r is the palette index, no transparency
-    float palette_index = flat_atlas().Sample(nearest_samp(), uv / scene.atlas_size).r;
+    // Flat atlas is R8_UNORM — sample returns palette index directly, no transparency
+    float palette_index = flat_atlas().Sample(nearest_samp(), uv / scene.atlas_size);
 
     float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC);
     return float4(color, 1.0);

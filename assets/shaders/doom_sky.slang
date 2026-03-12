@@ -69,7 +69,7 @@ float4 fs_main(SkyVarying input) : SV_Target {
         uv.y = 1.0 - uv.y;
     }
 
-    float palette_index = sky_texture().Sample(nearest_samp(), uv).r;
+    float palette_index = sky_texture().Sample(nearest_samp(), uv);
     float3 color = palette_tex().Sample(nearest_samp(), float2(palette_index, 0.0)).rgb;
 
     return float4(color, 1.0);

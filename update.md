@@ -1,42 +1,5 @@
 ## 1. R8/RG8 Texture Formats Already Exist — 150+ lines of CPU conversion are unnecessary
-
-This is the biggest win. The AGENTS.md says "goldy only supports RGBA8/BGRA8" and the renderer has three manual conversion functions:
-
-```253:277:goldy-doom/src/render/renderer.rs
-        let wall_rgba = wall_atlas_to_rgba8(&wall_atlas.0);
-        // ...
-        let flat_rgba = r8_to_rgba8(&flat_atlas.0);
-        // ...
-        let palette_rgba = palette_to_rgba8(&palette);
-```
-
-But goldy *already* supports `R8Unorm` and `Rg8Unorm`:
-
-```370:388:goldy/src/texture.rs
-    #[test]
-    fn test_texture_r8_unorm() {
-        let device = create_test_device();
-        let data = vec![128u8; 64 * 64]; // 1 byte per pixel
-        let texture = Texture::with_data(
-            &device,
-            &data,
-            64,
-            64,
-            TextureFormat::R8Unorm,
-            SpatialAccess::Interpolated,
-            TextureFlags::COPY_DST,
-        )
-        .unwrap();
-```
-
-The flat atlas (u8 palette indices) could go directly as `R8Unorm`. The palette (RGB triplets) can stay RGBA8 but skips the helper. The wall atlas (u16 = palette index + transparency) could use `Rg8Unorm`. That would:
-- **Eliminate** `wall_atlas_to_rgba8()`, `r8_to_rgba8()`, `palette_to_rgba8()` (~40 lines)
-- **Eliminate** the RGBA expansion on the CPU in `load_level()` (~20 lines)
-- **Cut flat atlas GPU memory by 4x** (1 byte/pixel instead of 4)
-- **Cut wall atlas GPU memory by 2x** (2 bytes/pixel instead of 4)
-- Make the shader reads semantically correct — `.r` in the shader genuinely is the palette index, no channel-packing tricks
-
-The shaders in `doom_common.slang` already sample `.r` and `.g` separately, so they'd barely change — just the type annotation (`Texture2D<float>` instead of `Texture2D<float4>` for the flat atlas).
+<<DONE>>
 
 ---
 

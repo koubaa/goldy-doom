@@ -81,10 +81,14 @@ float4 fs_main(StaticVarying input) : SV_Target {
     float2 tile_mod = fmod(fmod(input.tile_uv, input.tile_size) + input.tile_size, input.tile_size);
     float2 uv = tile_mod + input.atlas_uv;
     float2 atlas_sz = input.use_flat_atlas != 0 ? scene.flat_atlas_size : scene.atlas_size;
-    float4 atlas_sample = input.use_flat_atlas != 0
-        ? flat_atlas().Sample(nearest_samp(), uv / atlas_sz)
-        : wall_atlas().Sample(nearest_samp(), uv / atlas_sz);
-    if (input.use_flat_atlas == 0 && atlas_sample.g > 0.5) { discard; }
-    float3 color = palette_lookup(atlas_sample.r, input.light, input.dist, DIST_SCALE_STATIC);
+    float palette_index;
+    if (input.use_flat_atlas != 0) {
+        palette_index = flat_atlas().Sample(nearest_samp(), uv / atlas_sz);
+    } else {
+        float2 wall_sample = wall_atlas().Sample(nearest_samp(), uv / atlas_sz);
+        if (wall_sample.g > 0.5) { discard; }
+        palette_index = wall_sample.r;
+    }
+    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC);
     return float4(color, 1.0);
 }

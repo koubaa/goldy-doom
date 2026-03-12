@@ -248,29 +248,27 @@ impl Renderer {
                 .context("decor index buffer")?
         };
 
-        // Wall atlas: u16 → RGBA8 (R=palette_idx, G=transparency, B=0, A=255).
+        // Wall atlas: u16 raw bytes → Rg8Unorm (R=palette_idx, G=transparency).
         let (wall_w, wall_h) = (wall_atlas.1[0] as u32, wall_atlas.1[1] as u32);
-        let wall_rgba = wall_atlas_to_rgba8(&wall_atlas.0);
         let wall_tex = Texture::with_data(
             device,
-            &wall_rgba,
+            bytemuck::cast_slice::<u16, u8>(&wall_atlas.0),
             wall_w,
             wall_h,
-            TextureFormat::Rgba8Unorm,
+            TextureFormat::Rg8Unorm,
             SpatialAccess::Interpolated,
             TextureFlags::COPY_DST,
         )
         .context("wall atlas texture")?;
 
-        // Flat atlas: u8 → RGBA8 (R=palette_idx, G=0, B=0, A=255).
+        // Flat atlas: u8 raw → R8Unorm (palette index per pixel).
         let (flat_w, flat_h) = (flat_atlas.1[0] as u32, flat_atlas.1[1] as u32);
-        let flat_rgba = r8_to_rgba8(&flat_atlas.0);
         let flat_tex = Texture::with_data(
             device,
-            &flat_rgba,
+            &flat_atlas.0,
             flat_w,
             flat_h,
-            TextureFormat::Rgba8Unorm,
+            TextureFormat::R8Unorm,
             SpatialAccess::Interpolated,
             TextureFlags::COPY_DST,
         )
@@ -291,34 +289,28 @@ impl Renderer {
         )
         .context("palette texture")?;
 
-        // Sky texture: u8 → RGBA8 (R=palette_idx, G=0, B=0, A=255). Fallback 1x1 black.
+        // Sky texture: u8 raw → R8Unorm (palette index per pixel). Fallback 1x1 black.
         let sky_tex = match sky_texture {
-            Some((data, [w, h])) => {
-                let sky_rgba = r8_to_rgba8(&data);
-                Texture::with_data(
-                    device,
-                    &sky_rgba,
-                    w as u32,
-                    h as u32,
-                    TextureFormat::Rgba8Unorm,
-                    SpatialAccess::Interpolated,
-                    TextureFlags::COPY_DST,
-                )
-                .context("sky texture")?
-            }
-            None => {
-                let fallback = vec![0u8, 0, 0, 255];
-                Texture::with_data(
-                    device,
-                    &fallback,
-                    1,
-                    1,
-                    TextureFormat::Rgba8Unorm,
-                    SpatialAccess::Interpolated,
-                    TextureFlags::COPY_DST,
-                )
-                .context("sky fallback texture")?
-            }
+            Some((data, [w, h])) => Texture::with_data(
+                device,
+                &data,
+                w as u32,
+                h as u32,
+                TextureFormat::R8Unorm,
+                SpatialAccess::Interpolated,
+                TextureFlags::COPY_DST,
+            )
+            .context("sky texture")?,
+            None => Texture::with_data(
+                device,
+                &[0u8],
+                1,
+                1,
+                TextureFormat::R8Unorm,
+                SpatialAccess::Interpolated,
+                TextureFlags::COPY_DST,
+            )
+            .context("sky fallback texture")?,
         };
 
         log::info!(
@@ -462,31 +454,6 @@ impl Renderer {
 // ============================================================================
 // Texture format conversion helpers
 // ============================================================================
-
-/// Wall atlas: Vec<u16> → RGBA8 (4 bytes per pixel).
-/// R = palette index, G = transparency, B = 0, A = 255.
-fn wall_atlas_to_rgba8(pixels: &[u16]) -> Vec<u8> {
-    let mut rgba = Vec::with_capacity(pixels.len() * 4);
-    for &p in pixels {
-        rgba.push((p & 0xFF) as u8);
-        rgba.push(((p >> 8) & 0xFF) as u8);
-        rgba.push(0);
-        rgba.push(255);
-    }
-    rgba
-}
-
-/// Single-channel u8 → RGBA8 (R = value, G/B = 0, A = 255).
-fn r8_to_rgba8(pixels: &[u8]) -> Vec<u8> {
-    let mut rgba = Vec::with_capacity(pixels.len() * 4);
-    for &p in pixels {
-        rgba.push(p);
-        rgba.push(0);
-        rgba.push(0);
-        rgba.push(255);
-    }
-    rgba
-}
 
 /// Palette: RGB triplets → RGBA8.
 fn palette_to_rgba8(rgb: &[u8]) -> Vec<u8> {
