@@ -3,9 +3,9 @@
 ## What This Is
 DOOM (1993) port using the `goldy` GPU library. Stress-tests goldy with a real game to surface API gaps and bugs.
 
-## Current State: Fully wired — ready to test with a WAD
+## Current State: Boots and renders with doom1.wad
 
-The project **compiles cleanly** (`cargo check` = 0 errors, 0 warnings). The full pipeline is wired: WAD file → BSP walk → geometry extraction → GPU upload → goldy render loop. Slang shaders are ported from the original GLSL and use goldy's bindless resource model via push constants.
+The project **compiles and runs**. Tested against `doom1.wad` (DOOM Shareware, E1M1–E1M9). A window opens, geometry renders, the camera moves with WASD + mouse. The full pipeline works: WAD file → BSP walk → geometry extraction → GPU upload → goldy render loop. Slang shaders use goldy's bindless resource model via push constants.
 
 ## Project Structure
 ```
@@ -40,7 +40,7 @@ goldy-doom/
         ├── vertex.rs               # StaticVertex, SpriteVertex, SkyVertex (bytemuck)
         ├── lights.rs               # CPU-side light level animation
         ├── level_builder.rs        # LevelVisitor impl → vertex/index buffers
-        └── renderer.rs             # Goldy renderer (STUBBED — see TODOs inside)
+        └── renderer.rs             # Goldy renderer (fully implemented)
 ```
 
 ## Porting From rust-doom
@@ -67,7 +67,7 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 | 2 | Wall/sprite atlas | Interpolated | RGBA8 (R=palette_idx, G=transparency) |
 | 3 | Flat atlas | Interpolated | RGBA8 (R=palette_idx) |
 | 4 | Palette lookup | Interpolated | RGBA8, 256×num_colormaps |
-| 5 | Sky texture | Interpolated | (not yet wired) |
+| 5 | Sky texture | Interpolated | RGBA8 (R=palette_idx), loaded from WAD |
 | 6 | Sampler | Filter | Nearest-neighbor, repeat U, clamp V |
 
 **Texture format notes (goldy only supports RGBA8/BGRA8):**
@@ -78,15 +78,20 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 
 ## Known Gaps Surfaced
 
-1. **Surface depth**: goldy `Surface` doesn't support depth attachments. Only `RenderTarget` does. DOOM needs depth testing for sprites. Current workaround: no depth, rely on BSP back-to-front ordering.
-2. **Texture formats**: goldy only supports RGBA8/BGRA8/RGBA16F/RGBA32F. No R8, RG8, R16 formats. DOOM needs single/two-channel textures for palette-indexed rendering. Workaround: expand to RGBA8 on CPU.
-3. **Sky texture**: Not yet loaded from the WAD.
+1. **Texture formats**: goldy only supports RGBA8/BGRA8/RGBA16F/RGBA32F. No R8, RG8, R16 formats. DOOM needs single/two-channel textures for palette-indexed rendering. Workaround: expand to RGBA8 on CPU. *(resolved with workaround)*
+2. **Surface depth**: `Surface::new_with_depth` and `DepthStencilState` are now used — depth testing is active. *(resolved)*
+3. **Sky texture**: Loaded from WAD via `archive.metadata().sky_for()` and uploaded as a real texture. *(resolved)*
+
+## Known Remaining Issues (from doom1.wad test run)
+
+1. **Unknown linedef special types**: The visitor logs errors for trigger/action linedef types it doesn't handle: 8, 9, 35, 48, 97. These are interactive types (scrolling walls, doors, teleporters) — non-fatal for passive rendering, but doors/scrollers won't animate.
+2. **No game logic**: Enemies, items, doors, lifts, and pickups are not simulated — this is a viewer, not a playable game.
 
 ## What Needs To Happen Next
 
-1. **Test with a WAD** — Run `cargo run -- --wad doom.wad` and see what happens
-2. **Sky texture** — Load the sky texture from the WAD and wire it up
-3. **Depth testing** — When goldy surfaces support depth, add `DepthStencilState` to pipelines
+1. **Implement missing linedef specials** — At minimum: type 48 (scroll texture left) is cosmetic and common in E1M1. Types 9/35/97 are triggers.
+2. **Light animation** — `lights.rs` is wired but the per-frame `light_levels` passed to `render_frame` are all `1.0`. Hook up the actual animated light values from `LightInfo`.
+3. **Sprite sorting** — Sprites currently rely on BSP order; add distance-based sort for correct sprite-on-sprite overlap.
 
 ## Key Goldy API Features This Will Stress
 - `create_buffer` / `create_buffer_init` (vertex, index, uniform)
