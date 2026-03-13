@@ -11,6 +11,7 @@ use goldy::{
     Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, RenderPipeline,
     RenderPipelineDesc, Sampler, ShaderModule, Surface, Texture,
 };
+use std::mem::size_of;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -225,56 +226,32 @@ impl Renderer {
         let device = &self.device;
 
         // Single BufferPool for all level geometry — one GPU allocation, six views.
-        let static_vb_len = mesh.static_vertices.len() as u64;
-        let static_ib_len = mesh.static_indices.len() as u64;
-        let sky_vb_len = mesh.sky_vertices.len() as u64;
-        let sky_ib_len = mesh.sky_indices.len() as u64;
-        let decor_vb_len = mesh.decor_vertices.len().max(1) as u64;
-        let decor_ib_len = mesh.decor_indices.len().max(1) as u64;
-
-        let static_vb_bytes = static_vb_len * std::mem::size_of::<StaticVertex>() as u64;
-        let static_ib_bytes = static_ib_len * 4;
-        let sky_vb_bytes = sky_vb_len * std::mem::size_of::<SkyVertex>() as u64;
-        let sky_ib_bytes = sky_ib_len * 4;
-        let decor_vb_bytes = decor_vb_len * std::mem::size_of::<SpriteVertex>() as u64;
-        let decor_ib_bytes = decor_ib_len * 4;
-
-        // Max alignment overhead per alloc = lcm(256, stride) - 1. Worst case is SpriteVertex
-        // (stride 52): lcm(256, 52) = 3328. Total max across 6 allocs = 6138; use 8192 for safety.
-        let total = static_vb_bytes + static_ib_bytes + sky_vb_bytes + sky_ib_bytes
-            + decor_vb_bytes
-            + decor_ib_bytes
-            + 8192; // alignment padding
+        let total = BufferPool::padded_size(&[
+            (mesh.static_vertices.len(), size_of::<StaticVertex>()),
+            (mesh.static_indices.len(), size_of::<u32>()),
+            (mesh.sky_vertices.len(), size_of::<SkyVertex>()),
+            (mesh.sky_indices.len(), size_of::<u32>()),
+            (mesh.decor_vertices.len().max(1), size_of::<SpriteVertex>()),
+            (mesh.decor_indices.len().max(1), size_of::<u32>()),
+        ]);
 
         let mut pool =
             BufferPool::new(device, total).context("level geometry buffer pool")?;
 
-        let static_vb = pool.alloc::<StaticVertex>(static_vb_len)?;
-        static_vb.write_data(&mesh.static_vertices)?;
-        let static_ib = pool.alloc::<u32>(static_ib_len)?;
-        static_ib.write_data(&mesh.static_indices)?;
-        let sky_vb = pool.alloc::<SkyVertex>(sky_vb_len)?;
-        sky_vb.write_data(&mesh.sky_vertices)?;
-        let sky_ib = pool.alloc::<u32>(sky_ib_len)?;
-        sky_ib.write_data(&mesh.sky_indices)?;
+        let static_vb = pool.alloc_with_data(&mesh.static_vertices)?;
+        let static_ib = pool.alloc_with_data(&mesh.static_indices)?;
+        let sky_vb = pool.alloc_with_data(&mesh.sky_vertices)?;
+        let sky_ib = pool.alloc_with_data(&mesh.sky_indices)?;
 
         let decor_vb = if mesh.decor_vertices.is_empty() {
-            let v = pool.alloc::<SpriteVertex>(1)?;
-            v.write_data(&[SpriteVertex::zeroed()])?;
-            v
+            pool.alloc_with_data(&[SpriteVertex::zeroed()])?
         } else {
-            let v = pool.alloc::<SpriteVertex>(decor_vb_len)?;
-            v.write_data(&mesh.decor_vertices)?;
-            v
+            pool.alloc_with_data(&mesh.decor_vertices)?
         };
         let decor_ib = if mesh.decor_indices.is_empty() {
-            let v = pool.alloc::<u32>(1)?;
-            v.write_data(&[0u32])?;
-            v
+            pool.alloc_with_data(&[0u32])?
         } else {
-            let v = pool.alloc::<u32>(decor_ib_len)?;
-            v.write_data(&mesh.decor_indices)?;
-            v
+            pool.alloc_with_data(&mesh.decor_indices)?
         };
 
         // Wall atlas: u16 raw bytes → Rg8Unorm (R=palette_idx, G=transparency).
@@ -438,22 +415,21 @@ impl Renderer {
 
             // Push constants must be set AFTER set_pipeline (root signature must be bound first in D3D12,
             // and SetGraphicsRootSignature invalidates all root arguments).
-            let backing = level.pool.backing_buffer();
 
             // Sky first (background), then static (walls/floors), then decor
             if level.sky_index_count > 0 {
                 pass.set_pipeline(sky_pipeline);
                 pass.set_push_constants_raw(&push_constants);
-                pass.set_vertex_buffer_offset(0, backing, level.sky_vb.offset());
-                pass.set_index_buffer_offset(backing, level.sky_ib.offset(), IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, &level.sky_vb);
+                pass.set_index_buffer(&level.sky_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
             }
 
             if level.static_index_count > 0 {
                 pass.set_pipeline(static_pipeline);
                 pass.set_push_constants_raw(&push_constants);
-                pass.set_vertex_buffer_offset(0, backing, level.static_vb.offset());
-                pass.set_index_buffer_offset(backing, level.static_ib.offset(), IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, &level.static_vb);
+                pass.set_index_buffer(&level.static_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.static_index_count, 0, 0..1);
             }
 
@@ -461,8 +437,8 @@ impl Renderer {
                 let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
                 pass.set_pipeline(sprite_pipeline);
                 pass.set_push_constants_raw(&push_constants);
-                pass.set_vertex_buffer_offset(0, backing, level.decor_vb.offset());
-                pass.set_index_buffer_offset(backing, level.decor_ib.offset(), IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, &level.decor_vb);
+                pass.set_index_buffer(&level.decor_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
             }
         }

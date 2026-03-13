@@ -4,48 +4,7 @@
 ---
 
 ## 2. BufferPool — Replace 6 Allocations With 1
-
-The renderer creates 6 separate `Buffer` objects for level geometry:
-
-```39:50:goldy-doom/src/render/renderer.rs
-struct LevelGpuResources {
-    static_vb: Buffer,
-    static_ib: Buffer,
-    // ...
-    sky_vb: Buffer,
-    sky_ib: Buffer,
-    // ...
-    decor_vb: Buffer,
-    decor_ib: Buffer,
-```
-
-Goldy has `BufferPool` specifically for this:
-
-```256:278:goldy/src/buffer.rs
-/// A GPU buffer pool that sub-allocates views from a single large buffer.
-///
-/// Instead of allocating many small buffers (each a separate GPU allocation),
-/// create one pool and carve out typed regions. Each region gets its own
-/// bindless descriptor so shaders see independent zero-based buffers.
-///
-/// # Example
-///
-/// let mut pool = BufferPool::new(&device, 1024 * 1024)?; // 1 MB pool
-///
-/// let tiles = pool.alloc::<[u32; 2]>(1024)?;   // 8 KB for 1024 tiles
-/// let segments = pool.alloc::<[f32; 6]>(4096)?; // 96 KB for 4096 segments
-```
-
-One allocation, six `BufferView`s. Each view gets its own bindless index, so the shader side doesn't change at all. The `LevelGpuResources` struct could store `BufferView` instead of `Buffer`, and `load_level()` would become:
-
-```rust
-let total = static_bytes + sky_bytes + decor_bytes + index_bytes;
-let mut pool = BufferPool::new(device, total)?;
-let static_vb = pool.alloc::<StaticVertex>(mesh.static_vertices.len() as u64)?;
-// ... etc
-```
-
-This is exactly the kind of pattern goldy was designed for — fewer GPU allocations, less D3D12 heap fragmentation, cleaner code.
+<<DONE>>
 
 ---
 
