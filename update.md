@@ -36,36 +36,7 @@ device.register_library(ShaderLibrary::from_source("myeffects", r#"
 ---
 
 ## 5. Surface Format Validation
-
-goldy-doom creates pipelines without checking format compatibility:
-
-```167:178:goldy-doom/src/render/renderer.rs
-        let static_pipeline = RenderPipeline::new(
-            &self.device,
-            &static_shader,
-            &static_shader,
-            &RenderPipelineDesc {
-                vertex_layout: StaticVertex::layout(),
-                target_format,
-                depth_stencil: static_depth,
-                ..Default::default()
-            },
-        )
-```
-
-Goldy has explicit validation for this:
-
-```214:225:goldy/src/surface.rs
-    pub fn validate_pipeline_format(&self, pipeline_format: TextureFormat) -> Result<()> {
-        let surface_format = self.format();
-        if pipeline_format != surface_format {
-            anyhow::bail!(
-                "Pipeline format mismatch: pipeline uses {:?} but surface uses {:?}.\n\
-                 Set RenderPipelineDesc::target_format = surface.format() to fix this.",
-```
-
-Adding `surface.validate_pipeline_format(target_format)?` would make format mismatches a clear error at startup.
-
+<<DONE>>
 ---
 
 ## 6. Vertex Layout — The Biggest Ergonomic Gap (Feedback to Goldy)

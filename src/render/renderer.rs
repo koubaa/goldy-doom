@@ -131,6 +131,7 @@ impl Renderer {
         )
         .context("Failed to create surface")?;
         let target_format = surface.format();
+        surface.validate_pipeline_format(target_format)?;
 
         let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("assets")
