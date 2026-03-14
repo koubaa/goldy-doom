@@ -2,8 +2,7 @@
 // Handles palette-indexed textures, texture animation, scroll, and lighting.
 
 import doom_common;
-
-static const float ANIM_FPS = 8.0 / 35.0;
+import goldy_exp;
 
 // ============================================================================
 // Vertex layout — must match render::vertex::StaticVertex (bytemuck)
@@ -43,20 +42,7 @@ StaticVarying vs_main(StaticVertexIn input) {
     // Animated tile UV (scrolling walls like conveyor belts)
     output.tile_uv = input.tile_uv + float2(scene.time * input.scroll_rate, 0.0);
 
-    // Texture animation: advance atlas position to the correct frame
-    if (input.num_frames <= 1) {
-        output.atlas_uv = input.atlas_uv;
-    } else {
-        float frame_index = scene.time / ANIM_FPS;
-        frame_index = floor(fmod(frame_index, float(input.num_frames)));
-
-        float atlas_u = input.atlas_uv.x + frame_index * input.tile_size.x;
-        float n_rows_down = ceil((atlas_u + input.tile_size.x) / scene.atlas_size.x) - 1.0;
-        atlas_u += fmod(scene.atlas_size.x - input.atlas_uv.x, input.tile_size.x) * n_rows_down;
-        float atlas_v = input.atlas_uv.y + n_rows_down * input.row_height;
-
-        output.atlas_uv = float2(atlas_u, atlas_v);
-    }
+    output.atlas_uv = animate_atlas_uv(input.atlas_uv, input.tile_size, input.row_height, input.num_frames, scene.atlas_size.x, scene.time);
 
     output.tile_size = input.tile_size;
     output.use_flat_atlas = input.use_flat_atlas;
@@ -77,8 +63,7 @@ StaticVarying vs_main(StaticVertexIn input) {
 [shader("fragment")]
 float4 fs_main(StaticVarying input) : SV_Target {
     SceneUniforms scene = get_scene();
-    // Positive modulo — HLSL fmod can return negative for negative inputs
-    float2 tile_mod = fmod(fmod(input.tile_uv, input.tile_size) + input.tile_size, input.tile_size);
+    float2 tile_mod = positive_mod(input.tile_uv, input.tile_size);
     float2 uv = tile_mod + input.atlas_uv;
     float2 atlas_sz = input.use_flat_atlas != 0 ? scene.flat_atlas_size : scene.atlas_size;
     float palette_index;

@@ -9,7 +9,7 @@ use goldy::types::{
 };
 use goldy::{
     Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, RenderPipeline,
-    RenderPipelineDesc, Sampler, ShaderModule, Surface, Texture,
+    RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, Surface, Texture,
 };
 use std::mem::size_of;
 use std::sync::Arc;
@@ -133,10 +133,17 @@ impl Renderer {
         let target_format = surface.format();
         surface.validate_pipeline_format(target_format)?;
 
+        // Register doom_common as a shader library so import doom_common resolves via the library system
         let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("assets")
             .join("shaders");
-        let shader_path = shader_dir.to_string_lossy().to_string();
+        let doom_common_src = std::fs::read_to_string(shader_dir.join("doom_common.slang"))
+            .context("Failed to read doom_common.slang")?;
+        let doom_common_lib =
+            ShaderLibrary::from_source("doom_common", &doom_common_src);
+        self.device
+            .register_library(doom_common_lib)
+            .context("Failed to register doom_common shader library")?;
 
         let static_src = std::fs::read_to_string(shader_dir.join("doom_static.slang"))
             .context("Failed to read doom_static.slang")?;
@@ -145,15 +152,12 @@ impl Renderer {
         let sprite_src = std::fs::read_to_string(shader_dir.join("doom_sprite.slang"))
             .context("Failed to read doom_sprite.slang")?;
 
-        let static_shader =
-            ShaderModule::from_slang_with_paths(&self.device, &static_src, &[&shader_path])
-                .context("Failed to compile doom_static shader")?;
-        let sky_shader =
-            ShaderModule::from_slang_with_paths(&self.device, &sky_src, &[&shader_path])
-                .context("Failed to compile doom_sky shader")?;
-        let sprite_shader =
-            ShaderModule::from_slang_with_paths(&self.device, &sprite_src, &[&shader_path])
-                .context("Failed to compile doom_sprite shader")?;
+        let static_shader = ShaderModule::from_slang(&self.device, &static_src)
+            .context("Failed to compile doom_static shader")?;
+        let sky_shader = ShaderModule::from_slang(&self.device, &sky_src)
+            .context("Failed to compile doom_sky shader")?;
+        let sprite_shader = ShaderModule::from_slang(&self.device, &sprite_src)
+            .context("Failed to compile doom_sprite shader")?;
 
         let static_depth = Some(DepthStencilState::default());
 

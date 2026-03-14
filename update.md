@@ -11,27 +11,9 @@
 ---
 
 ## 4. Register `doom_common` as a Shader Library
+<<DONE>>
 
-Currently the shaders use filesystem search paths:
-
-```133:137:goldy-doom/src/render/renderer.rs
-        let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets")
-            .join("shaders");
-        let shader_path = shader_dir.to_string_lossy().to_string();
-```
-
-Goldy has a proper library registration system:
-
-```112:119:goldy/shaders/goldy_exp/access.slang
-// (from the shader docs)
-device.register_library(ShaderLibrary::from_source("myeffects", r#"
-    module myeffects;
-    public float3 glow(float i) { return float3(i, i * 0.8, i * 0.3); }
-"#))?;
-```
-
-`doom_common.slang` could be registered as a shader library. Then `doom_static.slang`, `doom_sky.slang`, etc. would `import doom_common` via the library system rather than filesystem paths. This is cleaner and is the pattern goldy was designed for.
+`doom_common.slang` is now registered via `Device::register_library()` before shader compilation. Shaders use `ShaderModule::from_slang()` with no filesystem paths. Also: `positive_mod` and `billboard_cylindrical_offset`/`modelview_right` added to goldy_exp; `animate_atlas_uv` centralized in doom_common; doom_sky uses goldy_exp's PI.
 
 ---
 
@@ -40,32 +22,7 @@ device.register_library(ShaderLibrary::from_source("myeffects", r#"
 ---
 
 ## 6. Vertex Layout — The Biggest Ergonomic Gap (Feedback to Goldy)
-
-The most error-prone code in the whole port is the manual vertex layout specification:
-
-```19:35:goldy-doom/src/render/vertex.rs
-impl StaticVertex {
-    pub fn layout() -> VertexBufferLayout {
-        VertexBufferLayout {
-            stride: std::mem::size_of::<Self>() as u32,
-            attributes: vec![
-                VertexAttribute { location: 0, format: VertexFormat::Float32x3, offset: 0 },   // pos
-                VertexAttribute { location: 1, format: VertexFormat::Float32x2, offset: 12 },  // atlas_uv
-                VertexAttribute { location: 2, format: VertexFormat::Float32x2, offset: 20 }, // tile_uv
-                VertexAttribute { location: 3, format: VertexFormat::Float32x2, offset: 28 }, // tile_size
-                VertexAttribute { location: 4, format: VertexFormat::Float32,   offset: 36 }, // scroll_rate
-                VertexAttribute { location: 5, format: VertexFormat::Float32,   offset: 40 },  // row_height
-                VertexAttribute { location: 6, format: VertexFormat::Uint32,    offset: 44 }, // num_frames
-                VertexAttribute { location: 7, format: VertexFormat::Uint32,    offset: 48 }, // light
-                VertexAttribute { location: 8, format: VertexFormat::Uint32,    offset: 52 }, // use_flat_atlas
-            ],
-        }
-    }
-}
-```
-
-9 attributes, 9 manual offsets. If you add a field and forget to update the offsets, **silent corruption**. This is the OpenGL `glVertexAttribPointer` pattern verbatim. Goldy doesn't have a `#[derive(VertexLayout)]` macro yet, but this is exactly the feedback the experiment should produce — goldy needs one. A derive macro that reads `#[repr(C)]` fields and generates the layout automatically would eliminate this entire class of bugs.
-
+<<DONE>>
 ---
 
 ## 7. Cross-Language Type Coherence — The SceneUniforms Problem

@@ -4,8 +4,7 @@
 // lookup as the static shader.
 
 import doom_common;
-
-static const float ANIM_FPS = 8.0 / 35.0;
+import goldy_exp;
 
 // ============================================================================
 // Vertex layout — must match render::vertex::SpriteVertex (bytemuck)
@@ -41,28 +40,11 @@ SpriteVarying vs_main(SpriteVertexIn input) {
     SpriteVarying output;
 
     output.tile_uv = input.tile_uv;
-
-    // Texture animation (same logic as static shader)
-    if (input.num_frames <= 1) {
-        output.atlas_uv = input.atlas_uv;
-    } else {
-        float frame_index = scene.time / ANIM_FPS;
-        frame_index = floor(fmod(frame_index, float(input.num_frames)));
-
-        float atlas_u = input.atlas_uv.x + frame_index * input.tile_size.x;
-        float n_rows_down = ceil((atlas_u + input.tile_size.x) / scene.atlas_size.x) - 1.0;
-        atlas_u += fmod(scene.atlas_size.x - input.atlas_uv.x, input.tile_size.x) * n_rows_down;
-        float atlas_v = input.atlas_uv.y + n_rows_down * input.tile_size.y;
-
-        output.atlas_uv = float2(atlas_u, atlas_v);
-    }
-
+    output.atlas_uv = animate_atlas_uv(input.atlas_uv, input.tile_size, input.tile_size.y, input.num_frames, scene.atlas_size.x, scene.time);
     output.tile_size = input.tile_size;
 
-    // Billboard: extract the camera-right vector from the modelview matrix
-    // and offset the vertex position along it by local_x
-    float3 right = float3(scene.modelview[0][0], scene.modelview[1][0], scene.modelview[2][0]);
-    float3 world_pos = input.pos + right * input.local_x;
+    // Cylindrical billboard: expand along camera-right
+    float3 world_pos = billboard_cylindrical_offset(input.pos, modelview_right(scene.modelview), input.local_x);
 
     float4 projected = mul(scene.projection, mul(scene.modelview, float4(world_pos, 1.0)));
     output.position = projected;

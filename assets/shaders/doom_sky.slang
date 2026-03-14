@@ -3,6 +3,7 @@
 // tiling/mirroring for vertical look-up/down.
 
 import doom_common;
+import goldy_exp;
 
 // ============================================================================
 // Vertex layout — must match render::vertex::SkyVertex (bytemuck)
@@ -45,8 +46,6 @@ SkyVarying vs_main(SkyVertexIn input) {
 // ============================================================================
 // Fragment shader
 // ============================================================================
-
-static const float PI = 3.14159265358;
 
 [shader("fragment")]
 float4 fs_main(SkyVarying input) : SV_Target {
