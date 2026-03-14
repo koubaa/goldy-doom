@@ -379,12 +379,10 @@ impl Renderer {
             time,
             tiled_band_size: level.tiled_band_size,
         };
-        self.scene_buf
-            .write(0, bytemuck::bytes_of(&uniforms))?;
+        self.scene_buf.write_data(0, &[uniforms])?;
 
         if light_levels.len() >= 256 {
-            self.light_buf
-                .write(0, bytemuck::cast_slice(&light_levels[..256]))?;
+            self.light_buf.write_data(0, &light_levels[..256])?;
         }
 
         let scene_idx = self.scene_buf.bindless_index().unwrap_or(0);

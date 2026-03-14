@@ -1,32 +1,13 @@
 ## 1. R8/RG8 Texture Formats Already Exist — 150+ lines of CPU conversion are unnecessary
 <<DONE>>
-
 ---
 
 ## 2. BufferPool — Replace 6 Allocations With 1
 <<DONE>>
-
 ---
 
 ## 3. `write_data<T>` Instead of Manual bytemuck
-
-Small, but it adds up for ergonomics. Currently:
-
-```383:384:goldy-doom/src/render/renderer.rs
-        self.scene_buf
-            .write(0, bytemuck::bytes_of(&uniforms))?;
-```
-
-Goldy already has:
-
-```124:126:goldy/src/buffer.rs
-    pub fn write_data<T: bytemuck::Pod>(&self, offset: u64, data: &[T]) -> Result<()> {
-        self.write(offset, bytemuck::cast_slice(data))
-    }
-```
-
-So: `self.scene_buf.write_data(0, &[uniforms])?;` — one less import, one less way to get the byte cast wrong.
-
+<<DONE>>
 ---
 
 ## 4. Register `doom_common` as a Shader Library
