@@ -13,8 +13,6 @@
 ## 4. Register `doom_common` as a Shader Library
 <<DONE>>
 
-`doom_common.slang` is now registered via `Device::register_library()` before shader compilation. Shaders use `ShaderModule::from_slang()` with no filesystem paths. Also: `positive_mod` and `billboard_cylindrical_offset`/`modelview_right` added to goldy_exp; `animate_atlas_uv` centralized in doom_common; doom_sky uses goldy_exp's PI.
-
 ---
 
 ## 5. Surface Format Validation
@@ -58,19 +56,3 @@ The abstract-gpu.md explicitly calls this out:
 > "If either side changes — a field is added, reordered, or the packing rules differ — the GPU silently reads garbage."
 
 Goldy's design doc proposes runtime layout validation via Slang reflection. goldy-doom is the perfect test case to implement this — compare `std::mem::size_of::<SceneUniforms>()` and `offset_of!` against Slang's reflection data at shader load time.
-
----
-
-## Summary: What Goldy-Doom Proves (and What It Should Push)
-
-| Area | Current (1:1 Port) | Goldy-Idiomatic | Impact |
-|------|-------------------|-----------------|--------|
-| Texture formats | CPU expand u8/u16→RGBA8 | Use R8Unorm, Rg8Unorm natively | -150 LOC, -4x memory |
-| Buffer allocation | 6 separate allocations | BufferPool + views | Cleaner, fewer allocs |
-| Buffer writes | Manual bytemuck::bytes_of | `write_data<T>()` | Less error-prone |
-| Shader loading | Filesystem search paths | `register_library()` | Cleaner |
-| Format safety | None | `validate_pipeline_format()` | Catches bugs at init |
-| Vertex layouts | Manual offset math | Needs `#[derive(VertexLayout)]` | **Feedback to goldy** |
-| Type coherence | Hope and prayer | Slang reflection validation | **Feedback to goldy** |
-
-Items 1-5 are things goldy already supports that goldy-doom doesn't use. Items 6-7 are gaps this experiment surfaces that goldy should fill. That's exactly what "stress-testing goldy with a real game" was supposed to produce.
