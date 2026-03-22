@@ -47,14 +47,14 @@ struct SceneUniforms {
 
 SceneUniforms get_scene() { return goldy_dyn_broadcast<SceneUniforms>(PC_SCENE); }
 
-Texture2D<float2> wall_atlas()   { return goldy_dyn_interpolated<float2>(PC_WALL); }
-Texture2D<float>  flat_atlas()   { return goldy_dyn_interpolated<float>(PC_FLAT); }
+Texture2D<float4> wall_atlas()   { return goldy_dyn_interpolated<float4>(PC_WALL); }
+Texture2D<float4> flat_atlas()   { return goldy_dyn_interpolated<float4>(PC_FLAT); }
 Texture2D<float4> palette_tex()  { return goldy_dyn_interpolated<float4>(PC_PALETTE); }
-Texture2D<float>  sky_texture()  { return goldy_dyn_interpolated<float>(PC_SKY); }
+Texture2D<float4> sky_texture()  { return goldy_dyn_interpolated<float4>(PC_SKY); }
 SamplerState      nearest_samp() { return goldy_dyn_filter(PC_SAMPLER); }
 
 float read_light(int light_index) {
-    RWStructuredBuffer<float> lights = goldy_dyn_scattered<float>(PC_LIGHTS);
+    StorageBuffer<float> lights = goldy_dyn_scattered<float>(PC_LIGHTS);
     return lights[light_index];
 }
 

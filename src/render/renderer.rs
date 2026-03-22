@@ -377,8 +377,8 @@ impl Renderer {
         let sky_pipeline = self.sky_pipeline.as_ref().unwrap();
 
         let uniforms = SceneUniforms {
-            projection: proj.transpose().to_cols_array_2d(),
-            modelview: view.transpose().to_cols_array_2d(),
+            projection: proj.to_cols_array_2d(),
+            modelview: view.to_cols_array_2d(),
             atlas_size: level.wall_atlas_size,
             flat_atlas_size: level.flat_atlas_size,
             time,

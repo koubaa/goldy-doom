@@ -68,9 +68,9 @@ float4 fs_main(StaticVarying input) : SV_Target {
     float2 atlas_sz = input.use_flat_atlas != 0 ? scene.flat_atlas_size : scene.atlas_size;
     float palette_index;
     if (input.use_flat_atlas != 0) {
-        palette_index = flat_atlas().Sample(nearest_samp(), uv / atlas_sz);
+        palette_index = flat_atlas().Sample(nearest_samp(), uv / atlas_sz).r;
     } else {
-        float2 wall_sample = wall_atlas().Sample(nearest_samp(), uv / atlas_sz);
+        float4 wall_sample = wall_atlas().Sample(nearest_samp(), uv / atlas_sz);
         if (wall_sample.g > 0.5) { discard; }
         palette_index = wall_sample.r;
     }
