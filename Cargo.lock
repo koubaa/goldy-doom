@@ -661,6 +661,7 @@ dependencies = [
  "core-graphics-types 0.2.0",
  "dirs",
  "foreign-types",
+ "goldy_derive",
  "gpu-allocator",
  "libloading 0.9.0",
  "metal",
@@ -692,6 +693,15 @@ dependencies = [
  "serde",
  "toml",
  "winit",
+]
+
+[[package]]
+name = "goldy_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

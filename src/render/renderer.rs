@@ -8,16 +8,15 @@ use goldy::types::{
     IndexFormat, SamplerDesc, SpatialAccess, TextureFlags, TextureFormat,
 };
 use goldy::{
-    Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, RenderPipeline,
-    RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, Surface, Texture,
+    Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, LayoutCheckable,
+    RenderPipeline, RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, Surface, Texture,
 };
-use std::mem::size_of;
 use std::sync::Arc;
 use winit::window::Window;
 
 /// Must match the `SceneUniforms` struct in doom_common.slang exactly.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, LayoutCheckable)]
 pub struct SceneUniforms {
     pub projection: [[f32; 4]; 4],
     pub modelview: [[f32; 4]; 4],
@@ -147,13 +146,25 @@ impl Renderer {
 
         let static_src = std::fs::read_to_string(shader_dir.join("doom_static.slang"))
             .context("Failed to read doom_static.slang")?;
+
         let sky_src = std::fs::read_to_string(shader_dir.join("doom_sky.slang"))
             .context("Failed to read doom_sky.slang")?;
         let sprite_src = std::fs::read_to_string(shader_dir.join("doom_sprite.slang"))
             .context("Failed to read doom_sprite.slang")?;
 
-        let static_shader = ShaderModule::from_slang(&self.device, &static_src)
-            .context("Failed to compile doom_static shader")?;
+        let static_shader = ShaderModule::from_slang_with_options(
+            &self.device,
+            &static_src,
+            &[],
+            &[],
+            Default::default(),
+            &[SceneUniforms::LAYOUT_CHECK],
+        )
+        .context("Failed to compile doom_static shader")?;
+
+        if goldy::layout_validation_enabled() {
+            log::info!("SceneUniforms layout validated (GOLDY_VALIDATE_LAYOUTS=1)");
+        }
         let sky_shader = ShaderModule::from_slang(&self.device, &sky_src)
             .context("Failed to compile doom_sky shader")?;
         let sprite_shader = ShaderModule::from_slang(&self.device, &sprite_src)
