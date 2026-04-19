@@ -1,5 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 use goldy::types::{VertexBufferLayout, VertexFormat};
+use goldy::StructuredBufferElement;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -75,3 +76,7 @@ impl SkyVertex {
         ])
     }
 }
+
+impl StructuredBufferElement for StaticVertex {}
+impl StructuredBufferElement for SpriteVertex {}
+impl StructuredBufferElement for SkyVertex {}

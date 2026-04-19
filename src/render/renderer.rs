@@ -9,7 +9,8 @@ use goldy::types::{
 };
 use goldy::{
     Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, LayoutCheckable,
-    RenderPipeline, RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, Surface, Texture,
+    RenderPipeline, RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, StructuredBufferElement,
+    Surface, Texture,
 };
 use std::sync::Arc;
 use winit::window::Window;
@@ -25,6 +26,8 @@ pub struct SceneUniforms {
     pub time: f32,
     pub tiled_band_size: f32,
 }
+
+impl StructuredBufferElement for SceneUniforms {}
 
 /// Push constant slot indices — must match doom_common.slang PC_* constants.
 const PC_SCENE: usize = 0;
