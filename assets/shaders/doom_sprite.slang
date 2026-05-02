@@ -35,8 +35,13 @@ struct SpriteVarying {
 // ============================================================================
 
 [shader("vertex")]
-SpriteVarying vs_main(SpriteVertexIn input) {
-    SceneUniforms scene = get_scene();
+SpriteVarying vs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    SpriteVertexIn input
+) {
+    SceneUniforms scene = get_scene(scene_slot);
     SpriteVarying output;
 
     output.tile_uv = input.tile_uv;
@@ -50,7 +55,7 @@ SpriteVarying vs_main(SpriteVertexIn input) {
     output.position = projected;
     output.dist = projected.w;
 
-    output.light = read_light(int(input.light));
+    output.light = read_light(lights_slot, int(input.light));
 
     return output;
 }
@@ -60,11 +65,16 @@ SpriteVarying vs_main(SpriteVertexIn input) {
 // ============================================================================
 
 [shader("fragment")]
-float4 fs_main(SpriteVarying input) : SV_Target {
-    SceneUniforms scene = get_scene();
+float4 fs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    SpriteVarying input
+) : SV_Target {
+    SceneUniforms scene = get_scene(scene_slot);
 
     float2 uv = fmod(input.tile_uv, input.tile_size) + input.atlas_uv;
-    float4 atlas_sample = wall_atlas().Sample(nearest_samp(), uv / scene.atlas_size);
+    float4 atlas_sample = wall_atlas(wall_slot).Sample(nearest_samp(sampler_slot), uv / scene.atlas_size);
 
     if (atlas_sample.g > 0.5) {
         discard;
@@ -74,7 +84,7 @@ float4 fs_main(SpriteVarying input) : SV_Target {
     float dist_term = min(1.0, 1.0 - DIST_SCALE_SPRITE / (input.dist + DIST_SCALE_SPRITE));
     float light = min(input.light, input.light * LIGHT_SCALE - dist_term);
     light = clamp(light, 0.0, 1.0);
-    float3 color = palette_tex().Sample(nearest_samp(), float2(atlas_sample.r, 1.0 - light)).rgb;
+    float3 color = palette_tex(palette_slot).Sample(nearest_samp(sampler_slot), float2(atlas_sample.r, 1.0 - light)).rgb;
 
     return float4(color, 1.0);
 }

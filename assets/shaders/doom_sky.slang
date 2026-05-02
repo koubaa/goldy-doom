@@ -25,8 +25,13 @@ struct SkyVarying {
 // ============================================================================
 
 [shader("vertex")]
-SkyVarying vs_main(SkyVertexIn input) {
-    SceneUniforms scene = get_scene();
+SkyVarying vs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    SkyVertexIn input
+) {
+    SceneUniforms scene = get_scene(scene_slot);
     SkyVarying output;
 
     float4x4 transform = mul(scene.projection, scene.modelview);
@@ -48,8 +53,13 @@ SkyVarying vs_main(SkyVertexIn input) {
 // ============================================================================
 
 [shader("fragment")]
-float4 fs_main(SkyVarying input) : SV_Target {
-    SceneUniforms scene = get_scene();
+float4 fs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    SkyVarying input
+) : SV_Target {
+    SceneUniforms scene = get_scene(scene_slot);
 
     // Screen-space UV from clip-space (perspective divide)
     float2 uv = float2(input.proj_pos.x, input.proj_pos.y) / input.proj_pos.w * float2(1.0, -1.0);
@@ -68,8 +78,8 @@ float4 fs_main(SkyVarying input) : SV_Target {
         uv.y = 1.0 - uv.y;
     }
 
-    float palette_index = sky_texture().Sample(nearest_samp(), uv).r;
-    float3 color = palette_tex().Sample(nearest_samp(), float2(palette_index, 0.0)).rgb;
+    float palette_index = sky_texture(sky_slot).Sample(nearest_samp(sampler_slot), uv).r;
+    float3 color = palette_tex(palette_slot).Sample(nearest_samp(sampler_slot), float2(palette_index, 0.0)).rgb;
 
     return float4(color, 1.0);
 }

@@ -35,8 +35,13 @@ struct StaticVarying {
 // ============================================================================
 
 [shader("vertex")]
-StaticVarying vs_main(StaticVertexIn input) {
-    SceneUniforms scene = get_scene();
+StaticVarying vs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    StaticVertexIn input
+) {
+    SceneUniforms scene = get_scene(scene_slot);
     StaticVarying output;
 
     // Animated tile UV (scrolling walls like conveyor belts)
@@ -51,7 +56,7 @@ StaticVarying vs_main(StaticVertexIn input) {
     output.position = projected;
     output.dist = projected.w;
 
-    output.light = read_light(int(input.light));
+    output.light = read_light(lights_slot, int(input.light));
 
     return output;
 }
@@ -61,19 +66,24 @@ StaticVarying vs_main(StaticVertexIn input) {
 // ============================================================================
 
 [shader("fragment")]
-float4 fs_main(StaticVarying input) : SV_Target {
-    SceneUniforms scene = get_scene();
+float4 fs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    StaticVarying input
+) : SV_Target {
+    SceneUniforms scene = get_scene(scene_slot);
     float2 tile_mod = positive_mod(input.tile_uv, input.tile_size);
     float2 uv = tile_mod + input.atlas_uv;
     float2 atlas_sz = input.use_flat_atlas != 0 ? scene.flat_atlas_size : scene.atlas_size;
     float palette_index;
     if (input.use_flat_atlas != 0) {
-        palette_index = flat_atlas().Sample(nearest_samp(), uv / atlas_sz).r;
+        palette_index = flat_atlas(flat_slot).Sample(nearest_samp(sampler_slot), uv / atlas_sz).r;
     } else {
-        float4 wall_sample = wall_atlas().Sample(nearest_samp(), uv / atlas_sz);
+        float4 wall_sample = wall_atlas(wall_slot).Sample(nearest_samp(sampler_slot), uv / atlas_sz);
         if (wall_sample.g > 0.5) { discard; }
         palette_index = wall_sample.r;
     }
-    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC);
+    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC, palette_slot, sampler_slot);
     return float4(color, 1.0);
 }

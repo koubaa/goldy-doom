@@ -21,14 +21,19 @@ struct StaticVarying {
 };
 
 [shader("fragment")]
-float4 fs_main(StaticVarying input) : SV_Target {
-    SceneUniforms scene = get_scene();
+float4 fs_main(
+    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
+    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
+    uniform uint sampler_slot,
+    StaticVarying input
+) : SV_Target {
+    SceneUniforms scene = get_scene(scene_slot);
 
     float2 uv = fmod(input.tile_uv, input.tile_size) + input.atlas_uv;
 
     // Flat atlas is R8_UNORM — sample returns palette index directly, no transparency
-    float palette_index = flat_atlas().Sample(nearest_samp(), uv / scene.atlas_size).r;
+    float palette_index = flat_atlas(flat_slot).Sample(nearest_samp(sampler_slot), uv / scene.atlas_size).r;
 
-    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC);
+    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC, palette_slot, sampler_slot);
     return float4(color, 1.0);
 }
