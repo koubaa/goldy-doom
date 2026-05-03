@@ -98,7 +98,7 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 - `create_texture` (2D, various formats — u16 palette needs attention)
 - `create_render_pipeline` (3 pipelines with different depth/blend/cull)
 - `begin_render_pass` with depth target
-- `set_push_constants` (bindless resource indices)
+- `bind_resources` / `bind_resources_raw` (bindless resource indices / resource slots)
 - `draw_indexed`
 - Surface acquire/present loop
 

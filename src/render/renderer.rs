@@ -446,7 +446,7 @@ impl Renderer {
             // Sky first (background), then static (walls/floors), then decor
             if level.sky_index_count > 0 {
                 pass.set_pipeline(sky_pipeline);
-                pass.set_push_constants_raw(&push_constants);
+                pass.bind_resources_raw(&push_constants);
                 pass.set_vertex_buffer(0, &level.sky_vb);
                 pass.set_index_buffer(&level.sky_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
@@ -454,7 +454,7 @@ impl Renderer {
 
             if level.static_index_count > 0 {
                 pass.set_pipeline(static_pipeline);
-                pass.set_push_constants_raw(&push_constants);
+                pass.bind_resources_raw(&push_constants);
                 pass.set_vertex_buffer(0, &level.static_vb);
                 pass.set_index_buffer(&level.static_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.static_index_count, 0, 0..1);
@@ -463,7 +463,7 @@ impl Renderer {
             if level.decor_index_count > 0 {
                 let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
                 pass.set_pipeline(sprite_pipeline);
-                pass.set_push_constants_raw(&push_constants);
+                pass.bind_resources_raw(&push_constants);
                 pass.set_vertex_buffer(0, &level.decor_vb);
                 pass.set_index_buffer(&level.decor_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
