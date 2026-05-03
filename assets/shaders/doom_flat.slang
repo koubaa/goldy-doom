@@ -20,20 +20,21 @@ struct StaticVarying {
     float  light      : TEXCOORD4;
 };
 
-[shader("fragment")]
+[goldy_fragment]
 float4 fs_main(
-    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
-    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
-    uniform uint sampler_slot,
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
     StaticVarying input
 ) : SV_Target {
-    SceneUniforms scene = get_scene(scene_slot);
+    SceneUniforms scene_data = get_scene(scene);
 
     float2 uv = fmod(input.tile_uv, input.tile_size) + input.atlas_uv;
 
     // Flat atlas is R8_UNORM — sample returns palette index directly, no transparency
-    float palette_index = flat_atlas(flat_slot).Sample(nearest_samp(sampler_slot), uv / scene.atlas_size).r;
+    float palette_index = flat_atlas(flat).Sample(nearest_samp(nearest), uv / scene_data.atlas_size).r;
 
-    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC, palette_slot, sampler_slot);
+    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC, palette, nearest);
     return float4(color, 1.0);
 }

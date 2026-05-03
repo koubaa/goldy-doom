@@ -34,28 +34,29 @@ struct SpriteVarying {
 // Vertex shader
 // ============================================================================
 
-[shader("vertex")]
+[goldy_vertex]
 SpriteVarying vs_main(
-    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
-    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
-    uniform uint sampler_slot,
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
     SpriteVertexIn input
 ) {
-    SceneUniforms scene = get_scene(scene_slot);
+    SceneUniforms scene_data = get_scene(scene);
     SpriteVarying output;
 
     output.tile_uv = input.tile_uv;
-    output.atlas_uv = animate_atlas_uv(input.atlas_uv, input.tile_size, input.tile_size.y, input.num_frames, scene.atlas_size.x, scene.time);
+    output.atlas_uv = animate_atlas_uv(input.atlas_uv, input.tile_size, input.tile_size.y, input.num_frames, scene_data.atlas_size.x, scene_data.time);
     output.tile_size = input.tile_size;
 
     // Cylindrical billboard: expand along camera-right
-    float3 world_pos = billboard_cylindrical_offset(input.pos, modelview_right(scene.modelview), input.local_x);
+    float3 world_pos = billboard_cylindrical_offset(input.pos, modelview_right(scene_data.modelview), input.local_x);
 
-    float4 projected = mul(scene.projection, mul(scene.modelview, float4(world_pos, 1.0)));
+    float4 projected = mul(scene_data.projection, mul(scene_data.modelview, float4(world_pos, 1.0)));
     output.position = projected;
     output.dist = projected.w;
 
-    output.light = read_light(lights_slot, int(input.light));
+    output.light = read_light(lights, int(input.light));
 
     return output;
 }
@@ -64,17 +65,18 @@ SpriteVarying vs_main(
 // Fragment shader
 // ============================================================================
 
-[shader("fragment")]
+[goldy_fragment]
 float4 fs_main(
-    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
-    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
-    uniform uint sampler_slot,
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
     SpriteVarying input
 ) : SV_Target {
-    SceneUniforms scene = get_scene(scene_slot);
+    SceneUniforms scene_data = get_scene(scene);
 
     float2 uv = fmod(input.tile_uv, input.tile_size) + input.atlas_uv;
-    float4 atlas_sample = wall_atlas(wall_slot).Sample(nearest_samp(sampler_slot), uv / scene.atlas_size);
+    float4 atlas_sample = wall_atlas(wall).Sample(nearest_samp(nearest), uv / scene_data.atlas_size);
 
     if (atlas_sample.g > 0.5) {
         discard;
@@ -84,7 +86,7 @@ float4 fs_main(
     float dist_term = min(1.0, 1.0 - DIST_SCALE_SPRITE / (input.dist + DIST_SCALE_SPRITE));
     float light = min(input.light, input.light * LIGHT_SCALE - dist_term);
     light = clamp(light, 0.0, 1.0);
-    float3 color = palette_tex(palette_slot).Sample(nearest_samp(sampler_slot), float2(atlas_sample.r, 1.0 - light)).rgb;
+    float3 color = palette_tex(palette).Sample(nearest_samp(nearest), float2(atlas_sample.r, 1.0 - light)).rgb;
 
     return float4(color, 1.0);
 }

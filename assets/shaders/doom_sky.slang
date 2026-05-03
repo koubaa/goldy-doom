@@ -24,17 +24,18 @@ struct SkyVarying {
 // Vertex shader
 // ============================================================================
 
-[shader("vertex")]
+[goldy_vertex]
 SkyVarying vs_main(
-    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
-    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
-    uniform uint sampler_slot,
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
     SkyVertexIn input
 ) {
-    SceneUniforms scene = get_scene(scene_slot);
+    SceneUniforms scene_data = get_scene(scene);
     SkyVarying output;
 
-    float4x4 transform = mul(scene.projection, scene.modelview);
+    float4x4 transform = mul(scene_data.projection, scene_data.modelview);
 
     // Extract camera forward direction from the combined matrix.
     // Column 2 of the combined matrix encodes the forward vector projection.
@@ -52,14 +53,15 @@ SkyVarying vs_main(
 // Fragment shader
 // ============================================================================
 
-[shader("fragment")]
+[goldy_fragment]
 float4 fs_main(
-    uniform uint scene_slot, uniform uint lights_slot, uniform uint wall_slot,
-    uniform uint flat_slot,  uniform uint palette_slot, uniform uint sky_slot,
-    uniform uint sampler_slot,
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
     SkyVarying input
 ) : SV_Target {
-    SceneUniforms scene = get_scene(scene_slot);
+    SceneUniforms scene_data = get_scene(scene);
 
     // Screen-space UV from clip-space (perspective divide)
     float2 uv = float2(input.proj_pos.x, input.proj_pos.y) / input.proj_pos.w * float2(1.0, -1.0);
@@ -67,7 +69,7 @@ float4 fs_main(
     // Cylindrical mapping: horizontal wraps with camera yaw, vertical shifts with pitch
     uv = float2(uv.x - 4.0 * input.rot.x / PI, uv.y + 1.0 + input.rot.y);
 
-    float tbs = scene.tiled_band_size;
+    float tbs = scene_data.tiled_band_size;
 
     // Vertical tiling/mirroring for when the player looks up or down
     if (uv.y < 0.0) {
@@ -78,8 +80,8 @@ float4 fs_main(
         uv.y = 1.0 - uv.y;
     }
 
-    float palette_index = sky_texture(sky_slot).Sample(nearest_samp(sampler_slot), uv).r;
-    float3 color = palette_tex(palette_slot).Sample(nearest_samp(sampler_slot), float2(palette_index, 0.0)).rgb;
+    float palette_index = sky_texture(sky).Sample(nearest_samp(nearest), uv).r;
+    float3 color = palette_tex(palette).Sample(nearest_samp(nearest), float2(palette_index, 0.0)).rgb;
 
     return float4(color, 1.0);
 }

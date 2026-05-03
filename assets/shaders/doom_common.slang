@@ -1,22 +1,22 @@
 // Common types and resource access for all DOOM shaders.
-// Uses goldy_exp push constants to pass bindless resource indices per-draw.
+// Uses goldy_exp virtual-main wrapper types for bindless resource binding.
 
 import goldy_exp;
 
 // ============================================================================
-// Push constant slot layout
+// Virtual-main parameter layout
 // ============================================================================
-// Every entry point receives these 7 uniform uint params in declaration order:
+// Every entry point receives these 7 typed wrapper params in declaration order:
 //
-//   uniform uint scene_slot    — SceneUniforms broadcast buffer
-//   uniform uint lights_slot   — Light levels buffer (StructuredBuffer<float> / read-only SRV on DX12)
-//   uniform uint wall_slot     — Wall/sprite atlas Texture2D
-//   uniform uint flat_slot     — Flat (floor/ceiling) atlas Texture2D
-//   uniform uint palette_slot  — Palette Texture2D
-//   uniform uint sky_slot      — Sky Texture2D
-//   uniform uint sampler_slot  — Sampler
+//   SceneUniforms        scene   — SceneUniforms constant buffer (implicit broadcast)
+//   BufRO<float>         lights  — Light levels buffer (read-only)
+//   Interpolated<float4>     wall    — Wall/sprite atlas Texture2D
+//   Interpolated<float4>     flat    — Flat (floor/ceiling) atlas Texture2D
+//   Interpolated<float4>     palette — Palette Texture2D
+//   Interpolated<float4>     sky     — Sky Texture2D
+//   Filter                   nearest — Sampler
 //
-// Rust side: pass.set_push_constants_raw(&[scene, lights, wall, flat, palette, sky, sampler])
+// Rust side: goldy virtual-main dispatch fills these from the bound resource table.
 
 // ============================================================================
 // Uniform data uploaded once per frame
@@ -34,21 +34,18 @@ struct SceneUniforms {
 // ============================================================================
 // Cross-platform resource access helpers
 // ============================================================================
-// Each helper takes its bindless slot index as an explicit parameter so that
-// entry points can forward their uniform uint params here.
+// Each helper takes a typed wrapper from goldy_exp so that entry points can
+// forward their virtual-main parameters directly.
 
-SceneUniforms get_scene(uint scene_slot) { return goldy_broadcast<SceneUniforms>(scene_slot); }
+SceneUniforms get_scene(SceneUniforms scene) { return scene; }
 
-Texture2D<float4> wall_atlas(uint wall_slot)     { return goldy_interpolated<float4>(wall_slot); }
-Texture2D<float4> flat_atlas(uint flat_slot)     { return goldy_interpolated<float4>(flat_slot); }
-Texture2D<float4> palette_tex(uint palette_slot) { return goldy_interpolated<float4>(palette_slot); }
-Texture2D<float4> sky_texture(uint sky_slot)     { return goldy_interpolated<float4>(sky_slot); }
-SamplerState      nearest_samp(uint sampler_slot){ return goldy_filter(sampler_slot); }
+Texture2D<float4> wall_atlas(Interpolated<float4> wall)      { return wall; }
+Texture2D<float4> flat_atlas(Interpolated<float4> flat)      { return flat; }
+Texture2D<float4> palette_tex(Interpolated<float4> palette)  { return palette; }
+Texture2D<float4> sky_texture(Interpolated<float4> sky)      { return sky; }
+SamplerState      nearest_samp(Filter nearest)               { return nearest; }
 
-float read_light(uint lights_slot, int light_index) {
-    ReadOnlyBuffer<float> lights = goldy_buf_ro<float>(lights_slot);
-    return lights[light_index];
-}
+float read_light(BufRO<float> lights, int light_index) { return lights[light_index]; }
 
 // ============================================================================
 // Palette-based color lookup (shared by static + sprite fragment shaders)
@@ -73,10 +70,10 @@ float2 animate_atlas_uv(float2 atlas_uv, float2 tile_size, float row_height, uin
 
 float3 palette_lookup(
     float palette_index, float light_level, float dist, float dist_scale,
-    uint palette_slot, uint sampler_slot
+    Interpolated<float4> palette, Filter nearest
 ) {
     float dist_term = min(1.0, 1.0 - dist_scale / (dist + dist_scale));
     float light = light_level * LIGHT_SCALE - dist_term;
     light = clamp(light, 0.0, 1.0);
-    return palette_tex(palette_slot).Sample(nearest_samp(sampler_slot), float2(palette_index, 1.0 - light)).rgb;
+    return palette_tex(palette).Sample(nearest_samp(nearest), float2(palette_index, 1.0 - light)).rgb;
 }
