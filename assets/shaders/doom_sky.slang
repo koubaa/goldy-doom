@@ -24,12 +24,18 @@ struct SkyVarying {
 // Vertex shader
 // ============================================================================
 
-[shader("vertex")]
-SkyVarying vs_main(SkyVertexIn input) {
-    SceneUniforms scene = get_scene();
+[goldy_vertex]
+SkyVarying vs_main(
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
+    SkyVertexIn input
+) {
+    SceneUniforms scene_data = get_scene(scene);
     SkyVarying output;
 
-    float4x4 transform = mul(scene.projection, scene.modelview);
+    float4x4 transform = mul(scene_data.projection, scene_data.modelview);
 
     // Extract camera forward direction from the combined matrix.
     // Column 2 of the combined matrix encodes the forward vector projection.
@@ -47,9 +53,15 @@ SkyVarying vs_main(SkyVertexIn input) {
 // Fragment shader
 // ============================================================================
 
-[shader("fragment")]
-float4 fs_main(SkyVarying input) : SV_Target {
-    SceneUniforms scene = get_scene();
+[goldy_fragment]
+float4 fs_main(
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
+    SkyVarying input
+) : SV_Target {
+    SceneUniforms scene_data = get_scene(scene);
 
     // Screen-space UV from clip-space (perspective divide)
     float2 uv = float2(input.proj_pos.x, input.proj_pos.y) / input.proj_pos.w * float2(1.0, -1.0);
@@ -57,7 +69,7 @@ float4 fs_main(SkyVarying input) : SV_Target {
     // Cylindrical mapping: horizontal wraps with camera yaw, vertical shifts with pitch
     uv = float2(uv.x - 4.0 * input.rot.x / PI, uv.y + 1.0 + input.rot.y);
 
-    float tbs = scene.tiled_band_size;
+    float tbs = scene_data.tiled_band_size;
 
     // Vertical tiling/mirroring for when the player looks up or down
     if (uv.y < 0.0) {
@@ -68,8 +80,8 @@ float4 fs_main(SkyVarying input) : SV_Target {
         uv.y = 1.0 - uv.y;
     }
 
-    float palette_index = sky_texture().Sample(nearest_samp(), uv).r;
-    float3 color = palette_tex().Sample(nearest_samp(), float2(palette_index, 0.0)).rgb;
+    float palette_index = sky_texture(sky).Sample(nearest_samp(nearest), uv).r;
+    float3 color = palette_tex(palette).Sample(nearest_samp(nearest), float2(palette_index, 0.0)).rgb;
 
     return float4(color, 1.0);
 }

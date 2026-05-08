@@ -34,24 +34,30 @@ struct StaticVarying {
 // Vertex shader
 // ============================================================================
 
-[shader("vertex")]
-StaticVarying vs_main(StaticVertexIn input) {
-    SceneUniforms scene = get_scene();
+[goldy_vertex]
+StaticVarying vs_main(
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
+    StaticVertexIn input
+) {
+    SceneUniforms scene_data = get_scene(scene);
     StaticVarying output;
 
     // Animated tile UV (scrolling walls like conveyor belts)
-    output.tile_uv = input.tile_uv + float2(scene.time * input.scroll_rate, 0.0);
+    output.tile_uv = input.tile_uv + float2(scene_data.time * input.scroll_rate, 0.0);
 
-    output.atlas_uv = animate_atlas_uv(input.atlas_uv, input.tile_size, input.row_height, input.num_frames, scene.atlas_size.x, scene.time);
+    output.atlas_uv = animate_atlas_uv(input.atlas_uv, input.tile_size, input.row_height, input.num_frames, scene_data.atlas_size.x, scene_data.time);
 
     output.tile_size = input.tile_size;
     output.use_flat_atlas = input.use_flat_atlas;
 
-    float4 projected = mul(scene.projection, mul(scene.modelview, float4(input.pos, 1.0)));
+    float4 projected = mul(scene_data.projection, mul(scene_data.modelview, float4(input.pos, 1.0)));
     output.position = projected;
     output.dist = projected.w;
 
-    output.light = read_light(int(input.light));
+    output.light = read_light(lights, int(input.light));
 
     return output;
 }
@@ -60,20 +66,26 @@ StaticVarying vs_main(StaticVertexIn input) {
 // Fragment shader
 // ============================================================================
 
-[shader("fragment")]
-float4 fs_main(StaticVarying input) : SV_Target {
-    SceneUniforms scene = get_scene();
+[goldy_fragment]
+float4 fs_main(
+    SceneUniforms scene, BufRO<float> lights,
+    Interpolated<float4> wall, Interpolated<float4> flat,
+    Interpolated<float4> palette, Interpolated<float4> sky,
+    Filter nearest,
+    StaticVarying input
+) : SV_Target {
+    SceneUniforms scene_data = get_scene(scene);
     float2 tile_mod = positive_mod(input.tile_uv, input.tile_size);
     float2 uv = tile_mod + input.atlas_uv;
-    float2 atlas_sz = input.use_flat_atlas != 0 ? scene.flat_atlas_size : scene.atlas_size;
+    float2 atlas_sz = input.use_flat_atlas != 0 ? scene_data.flat_atlas_size : scene_data.atlas_size;
     float palette_index;
     if (input.use_flat_atlas != 0) {
-        palette_index = flat_atlas().Sample(nearest_samp(), uv / atlas_sz).r;
+        palette_index = flat_atlas(flat).Sample(nearest_samp(nearest), uv / atlas_sz).r;
     } else {
-        float4 wall_sample = wall_atlas().Sample(nearest_samp(), uv / atlas_sz);
+        float4 wall_sample = wall_atlas(wall).Sample(nearest_samp(nearest), uv / atlas_sz);
         if (wall_sample.g > 0.5) { discard; }
         palette_index = wall_sample.r;
     }
-    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC);
+    float3 color = palette_lookup(palette_index, input.light, input.dist, DIST_SCALE_STATIC, palette, nearest);
     return float4(color, 1.0);
 }

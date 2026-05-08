@@ -12,6 +12,7 @@ use goldy::{
     RenderPipeline, RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, StructuredBufferElement,
     Surface, Texture,
 };
+use std::mem::size_of;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -349,6 +350,15 @@ impl Renderer {
             wall_w, wall_h, flat_w, flat_h, palette_h,
         );
 
+        // Flush all deferred texture uploads to the GPU before rendering.
+        // The DX12 backend defers texture::write() into pending_texture_copies;
+        // flush_texture_uploads() submits them in a single command list. Without
+        // this call the GPU resources are allocated (descriptors are valid) but
+        // never filled with pixel data — causing a black screen on DX12.
+        self.device
+            .flush_texture_uploads()
+            .context("flush_texture_uploads after level load")?;
+
         self.level = Some(LevelGpuResources {
             pool,
             static_vb,
@@ -405,7 +415,7 @@ impl Renderer {
         }
 
         let scene_idx = self.scene_buf.bindless_index().unwrap_or(0);
-        let light_idx = self.light_buf.bindless_index().unwrap_or(0);
+        let light_idx = self.light_buf.bindless_srv_index().unwrap_or(0);
         let wall_idx = level.wall_atlas.bindless_index().unwrap_or(0);
         let flat_idx = level.flat_atlas.bindless_index().unwrap_or(0);
         let palette_idx = level.palette.bindless_index().unwrap_or(0);
@@ -436,7 +446,7 @@ impl Renderer {
             // Sky first (background), then static (walls/floors), then decor
             if level.sky_index_count > 0 {
                 pass.set_pipeline(sky_pipeline);
-                pass.set_push_constants_raw(&push_constants);
+                pass.bind_resources_raw(&push_constants);
                 pass.set_vertex_buffer(0, &level.sky_vb);
                 pass.set_index_buffer(&level.sky_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
@@ -444,7 +454,7 @@ impl Renderer {
 
             if level.static_index_count > 0 {
                 pass.set_pipeline(static_pipeline);
-                pass.set_push_constants_raw(&push_constants);
+                pass.bind_resources_raw(&push_constants);
                 pass.set_vertex_buffer(0, &level.static_vb);
                 pass.set_index_buffer(&level.static_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.static_index_count, 0, 0..1);
@@ -453,7 +463,7 @@ impl Renderer {
             if level.decor_index_count > 0 {
                 let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
                 pass.set_pipeline(sprite_pipeline);
-                pass.set_push_constants_raw(&push_constants);
+                pass.bind_resources_raw(&push_constants);
                 pass.set_vertex_buffer(0, &level.decor_vb);
                 pass.set_index_buffer(&level.decor_ib, IndexFormat::Uint32);
                 pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
