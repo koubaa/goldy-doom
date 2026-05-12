@@ -52,7 +52,7 @@ goldy-doom/
 
 ## Running
 ```bash
-cargo run -- --wad /path/to/doom.wad --meta assets/meta/doom.toml --level 0
+cargo run -- --wad doom1.wad --meta assets/meta/doom.toml --level 0
 ```
 Opens a window and renders using goldy. Run with a DOOM WAD to see the level.
 
