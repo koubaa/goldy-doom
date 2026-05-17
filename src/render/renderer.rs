@@ -350,14 +350,6 @@ impl Renderer {
             wall_w, wall_h, flat_w, flat_h, palette_h,
         );
 
-        // Flush all deferred texture uploads to the GPU before rendering.
-        // The DX12 backend defers texture::write() into pending_texture_copies;
-        // flush_texture_uploads() submits them in a single command list. Without
-        // this call the GPU resources are allocated (descriptors are valid) but
-        // never filled with pixel data — causing a black screen on DX12.
-        self.device
-            .flush_texture_uploads()
-            .context("flush_texture_uploads after level load")?;
 
         self.level = Some(LevelGpuResources {
             pool,
