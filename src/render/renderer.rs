@@ -85,7 +85,9 @@ impl Renderer {
         let instance = Instance::new().context("Failed to create goldy instance")?;
         let device = Arc::new(
             instance
-                .create_device(goldy::DeviceType::DiscreteGpu)
+                .request_adapter(&goldy::RequestAdapterOptions::default())
+                .context("Failed to request goldy adapter")?
+                .request_device(&goldy::DeviceDescriptor::default())
                 .context("Failed to create goldy device")?,
         );
 
