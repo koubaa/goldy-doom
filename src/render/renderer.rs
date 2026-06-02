@@ -10,7 +10,7 @@ use goldy::types::{
 use goldy::{
     Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, LayoutCheckable,
     RenderPipeline, RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, StructuredBufferElement,
-    Surface, Texture,
+    Context as GpuContext, Surface, Texture,
 };
 use std::mem::size_of;
 use std::sync::Arc;
@@ -67,6 +67,7 @@ struct LevelGpuResources {
 pub struct Renderer {
     instance: Instance,
     device: Arc<Device>,
+    context: Option<GpuContext>,
 
     surface: Option<Surface>,
     static_pipeline: Option<RenderPipeline>,
@@ -116,6 +117,7 @@ impl Renderer {
         Ok(Self {
             instance,
             device,
+            context: None,
             surface: None,
             static_pipeline: None,
             sky_pipeline: None,
@@ -129,12 +131,17 @@ impl Renderer {
 
     /// Called once the window exists. Creates the surface and compiles pipelines.
     pub fn init_surface(&mut self, window: &Window) -> Result<()> {
+        let context = self
+            .device
+            .create_context()
+            .context("Failed to create submission context")?;
         let surface = Surface::new_with_depth(
-            &self.device,
+            &context,
             window,
             Some(DepthFormat::Depth24Plus),
         )
         .context("Failed to create surface")?;
+        self.context = Some(context);
         let target_format = surface.format();
         surface.validate_pipeline_format(target_format)?;
 
