@@ -106,13 +106,14 @@ impl Renderer {
         .context("Failed to create sampler")?;
 
         let scene_uniforms = SceneUniforms::zeroed();
-        let scene_buf = Buffer::with_data(&device, &[scene_uniforms], DataAccess::Broadcast)
+        let scene_buf = device
+            .alloc_buffer_with_data(&[scene_uniforms], DataAccess::Broadcast)
             .context("Failed to create scene uniform buffer")?;
 
         let initial_lights: Vec<f32> = vec![1.0; 256];
-        let light_buf =
-            Buffer::with_data(&device, &initial_lights, DataAccess::Scattered)
-                .context("Failed to create light buffer")?;
+        let light_buf = device
+            .alloc_buffer_with_data(&initial_lights, DataAccess::Scattered)
+            .context("Failed to create light buffer")?;
 
         Ok(Self {
             instance,
