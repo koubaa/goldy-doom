@@ -4,11 +4,11 @@ use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use goldy::types::{
-    AddressMode, CompareFunction, DataAccess, DepthFormat, DepthStencilState, FilterMode,
-    IndexFormat, SamplerDesc, SpatialAccess, TextureFlags, TextureFormat,
+    AddressMode, CompareFunction, BufferKind, DepthFormat, DepthStencilState, FilterMode,
+    IndexFormat, ResourceAccess, SamplerDesc, TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    Buffer, CommandEncoder, Device, Instance, LayoutCheckable, MosaicSlot, Parcel,
+    CommandEncoder, Device, Instance, LayoutCheckable, MosaicSlot, Parcel,
     RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, ShaderLibrary, ShaderModule,
     StructuredBufferElement, Context as GpuContext, Surface,
 };
@@ -74,8 +74,8 @@ pub struct Renderer {
     sprite_pipeline: Option<RenderPipeline>,
 
     sampler: Sampler,
-    scene_buf: Buffer,
-    light_buf: Buffer,
+    scene_buf: Parcel,
+    light_buf: Parcel,
 
     level: Option<LevelGpuResources>,
     retained_pool: RetainedPool,
@@ -105,17 +105,33 @@ impl Renderer {
         )
         .context("Failed to create sampler")?;
 
+        let mut retained_pool = RetainedPool::new(device.clone());
+
+        // Scene + light buffers are retained single-backed allocations: one allocation each,
+        // kept across frames with a stable bindless identity, rewritten in place every frame
+        // via `Parcel::copy_into`.
         let scene_uniforms = SceneUniforms::zeroed();
-        let scene_buf = device
-            .alloc_buffer_with_data(&[scene_uniforms], DataAccess::Broadcast)
+        let scene_bytes = bytemuck::bytes_of(&scene_uniforms);
+        let scene_buf = retained_pool
+            .acquire_buffer(
+                scene_bytes.len() as u64,
+                BufferKind::Broadcast,
+                Some(std::mem::size_of::<SceneUniforms>() as u32),
+                goldy::types::BufferFlags::empty(),
+                Some(scene_bytes),
+            )
             .context("Failed to create scene uniform buffer")?;
 
         let initial_lights: Vec<f32> = vec![1.0; 256];
-        let light_buf = device
-            .alloc_buffer_with_data(&initial_lights, DataAccess::Scattered)
+        let light_buf = retained_pool
+            .acquire_buffer(
+                (initial_lights.len() * std::mem::size_of::<f32>()) as u64,
+                BufferKind::Scattered,
+                Some(std::mem::size_of::<f32>() as u32),
+                goldy::types::BufferFlags::empty(),
+                Some(bytemuck::cast_slice(&initial_lights)),
+            )
             .context("Failed to create light buffer")?;
-
-        let retained_pool = RetainedPool::new(device.clone());
 
         Ok(Self {
             instance,
@@ -283,7 +299,7 @@ impl Renderer {
                 wall_w,
                 wall_h,
                 TextureFormat::Rg8Unorm,
-                SpatialAccess::Interpolated,
+                TextureKind::Interpolated,
                 TextureFlags::COPY_DST,
                 Some(bytemuck::cast_slice::<u16, u8>(&wall_atlas.0)),
             )
@@ -297,7 +313,7 @@ impl Renderer {
                 flat_w,
                 flat_h,
                 TextureFormat::R8Unorm,
-                SpatialAccess::Interpolated,
+                TextureKind::Interpolated,
                 TextureFlags::COPY_DST,
                 Some(&flat_atlas.0),
             )
@@ -313,7 +329,7 @@ impl Renderer {
                 256,
                 palette_h,
                 TextureFormat::Rgba8Unorm,
-                SpatialAccess::Interpolated,
+                TextureKind::Interpolated,
                 TextureFlags::COPY_DST,
                 Some(&palette_rgba),
             )
@@ -327,7 +343,7 @@ impl Renderer {
                     w as u32,
                     h as u32,
                     TextureFormat::R8Unorm,
-                    SpatialAccess::Interpolated,
+                    TextureKind::Interpolated,
                     TextureFlags::COPY_DST,
                     Some(&data),
                 )
@@ -338,7 +354,7 @@ impl Renderer {
                     1,
                     1,
                     TextureFormat::R8Unorm,
-                    SpatialAccess::Interpolated,
+                    TextureKind::Interpolated,
                     TextureFlags::COPY_DST,
                     Some(&[0u8]),
                 )
@@ -406,19 +422,20 @@ impl Renderer {
             time,
             tiled_band_size: level.tiled_band_size,
         };
-        self.scene_buf.write_data(0, &[uniforms])?;
+        // In-place retained recycle: overwrite the same allocation each frame.
+        self.scene_buf.copy_into(&[uniforms])?;
 
         if light_levels.len() >= 256 {
-            self.light_buf.write_data(0, &light_levels[..256])?;
+            self.light_buf.copy_into(&light_levels[..256])?;
         }
 
-        let scene_idx = self.scene_buf.bindless_index().unwrap_or(0);
-        let light_idx = self.light_buf.bindless_srv_index().unwrap_or(0);
-        let wall_idx = level.wall_atlas.bindless_index().unwrap_or(0);
-        let flat_idx = level.flat_atlas.bindless_index().unwrap_or(0);
-        let palette_idx = level.palette.bindless_index().unwrap_or(0);
-        let sky_idx = level.sky_texture.bindless_index().unwrap_or(0);
-        let sampler_idx = self.sampler.bindless_index().unwrap_or(0);
+        let scene_idx = self.scene_buf.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let light_idx = self.light_buf.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let wall_idx = level.wall_atlas.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let flat_idx = level.flat_atlas.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let palette_idx = level.palette.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let sky_idx = level.sky_texture.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let sampler_idx = self.sampler.resource_index(ResourceAccess::Read).unwrap_or(0);
 
         let push_constants = [
             scene_idx,
@@ -470,6 +487,11 @@ impl Renderer {
 
         frame.render(encoder)?;
         let submit_tv = surface.present(frame)?;
+
+        // Renew the reuse gate: record the timeline that just referenced these parcels so the
+        // next frame's copy_into waits for this frame's GPU reads to retire.
+        self.scene_buf.mark_referenced(submit_tv);
+        self.light_buf.mark_referenced(submit_tv);
 
         if let Some(level) = self.level.as_mut() {
             // TODO(no-command-encoder): manual stamp only because doom submits via CommandEncoder,
