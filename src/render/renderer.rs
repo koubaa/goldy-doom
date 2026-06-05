@@ -8,9 +8,9 @@ use goldy::types::{
     IndexFormat, SamplerDesc, SpatialAccess, TextureFlags, TextureFormat,
 };
 use goldy::{
-    Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, LayoutCheckable,
-    RenderPipeline, RenderPipelineDesc, Sampler, ShaderLibrary, ShaderModule, StructuredBufferElement,
-    Context as GpuContext, Surface, Texture,
+    Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, LayoutCheckable, Parcel,
+    RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, ShaderLibrary, ShaderModule,
+    StructuredBufferElement, Context as GpuContext, Surface,
 };
 use std::mem::size_of;
 use std::sync::Arc;
@@ -54,10 +54,10 @@ struct LevelGpuResources {
     decor_ib: BufferView,
     decor_index_count: u32,
 
-    wall_atlas: Texture,
-    flat_atlas: Texture,
-    palette: Texture,
-    sky_texture: Texture,
+    wall_atlas: Parcel,
+    flat_atlas: Parcel,
+    palette: Parcel,
+    sky_texture: Parcel,
 
     wall_atlas_size: [f32; 2],
     flat_atlas_size: [f32; 2],
@@ -79,6 +79,7 @@ pub struct Renderer {
     light_buf: Buffer,
 
     level: Option<LevelGpuResources>,
+    retained_pool: RetainedPool,
 }
 
 impl Renderer {
@@ -115,6 +116,8 @@ impl Renderer {
             .alloc_buffer_with_data(&initial_lights, DataAccess::Scattered)
             .context("Failed to create light buffer")?;
 
+        let retained_pool = RetainedPool::new(device.clone());
+
         Ok(Self {
             instance,
             device,
@@ -127,6 +130,7 @@ impl Renderer {
             scene_buf,
             light_buf,
             level: None,
+            retained_pool,
         })
     }
 
@@ -253,8 +257,6 @@ impl Renderer {
         sky_texture: Option<(Vec<u8>, [usize; 2])>,
         tiled_band_size: f32,
     ) -> Result<()> {
-        let device = &self.device;
-
         // Single BufferPool for all level geometry — one GPU allocation, six views.
         let total = BufferPool::padded_size(&[
             (mesh.static_vertices.len(), size_of::<StaticVertex>()),
@@ -265,8 +267,7 @@ impl Renderer {
             (mesh.decor_indices.len().max(1), size_of::<u32>()),
         ]);
 
-        let mut pool =
-            BufferPool::new(device, total).context("level geometry buffer pool")?;
+        let mut pool = BufferPool::new(&self.device, total).context("level geometry buffer pool")?;
 
         let static_vb = pool.alloc_with_data(&mesh.static_vertices)?;
         let static_ib = pool.alloc_with_data(&mesh.static_indices)?;
@@ -286,67 +287,72 @@ impl Renderer {
 
         // Wall atlas: u16 raw bytes → Rg8Unorm (R=palette_idx, G=transparency).
         let (wall_w, wall_h) = (wall_atlas.1[0] as u32, wall_atlas.1[1] as u32);
-        let wall_tex = Texture::with_data(
-            device,
-            bytemuck::cast_slice::<u16, u8>(&wall_atlas.0),
-            wall_w,
-            wall_h,
-            TextureFormat::Rg8Unorm,
-            SpatialAccess::Interpolated,
-            TextureFlags::COPY_DST,
-        )
-        .context("wall atlas texture")?;
+        let wall_tex = self
+            .retained_pool
+            .acquire_texture(
+                wall_w,
+                wall_h,
+                TextureFormat::Rg8Unorm,
+                SpatialAccess::Interpolated,
+                TextureFlags::COPY_DST,
+                Some(bytemuck::cast_slice::<u16, u8>(&wall_atlas.0)),
+            )
+            .context("wall atlas texture")?;
 
         // Flat atlas: u8 raw → R8Unorm (palette index per pixel).
         let (flat_w, flat_h) = (flat_atlas.1[0] as u32, flat_atlas.1[1] as u32);
-        let flat_tex = Texture::with_data(
-            device,
-            &flat_atlas.0,
-            flat_w,
-            flat_h,
-            TextureFormat::R8Unorm,
-            SpatialAccess::Interpolated,
-            TextureFlags::COPY_DST,
-        )
-        .context("flat atlas texture")?;
+        let flat_tex = self
+            .retained_pool
+            .acquire_texture(
+                flat_w,
+                flat_h,
+                TextureFormat::R8Unorm,
+                SpatialAccess::Interpolated,
+                TextureFlags::COPY_DST,
+                Some(&flat_atlas.0),
+            )
+            .context("flat atlas texture")?;
 
         // Palette: RGB triplets → RGBA8. Dimensions: 256 x num_colormaps.
         let num_colors = palette.len() / 3;
         let palette_h = (num_colors / 256).max(1) as u32;
         let palette_rgba = palette_to_rgba8(&palette);
-        let palette_tex = Texture::with_data(
-            device,
-            &palette_rgba,
-            256,
-            palette_h,
-            TextureFormat::Rgba8Unorm,
-            SpatialAccess::Interpolated,
-            TextureFlags::COPY_DST,
-        )
-        .context("palette texture")?;
+        let palette_tex = self
+            .retained_pool
+            .acquire_texture(
+                256,
+                palette_h,
+                TextureFormat::Rgba8Unorm,
+                SpatialAccess::Interpolated,
+                TextureFlags::COPY_DST,
+                Some(&palette_rgba),
+            )
+            .context("palette texture")?;
 
         // Sky texture: u8 raw → R8Unorm (palette index per pixel). Fallback 1x1 black.
         let sky_tex = match sky_texture {
-            Some((data, [w, h])) => Texture::with_data(
-                device,
-                &data,
-                w as u32,
-                h as u32,
-                TextureFormat::R8Unorm,
-                SpatialAccess::Interpolated,
-                TextureFlags::COPY_DST,
-            )
-            .context("sky texture")?,
-            None => Texture::with_data(
-                device,
-                &[0u8],
-                1,
-                1,
-                TextureFormat::R8Unorm,
-                SpatialAccess::Interpolated,
-                TextureFlags::COPY_DST,
-            )
-            .context("sky fallback texture")?,
+            Some((data, [w, h])) => self
+                .retained_pool
+                .acquire_texture(
+                    w as u32,
+                    h as u32,
+                    TextureFormat::R8Unorm,
+                    SpatialAccess::Interpolated,
+                    TextureFlags::COPY_DST,
+                    Some(&data),
+                )
+                .context("sky texture")?,
+            None => self
+                .retained_pool
+                .acquire_texture(
+                    1,
+                    1,
+                    TextureFormat::R8Unorm,
+                    SpatialAccess::Interpolated,
+                    TextureFlags::COPY_DST,
+                    Some(&[0u8]),
+                )
+                .context("sky fallback texture")?,
         };
 
         log::info!(
@@ -473,7 +479,15 @@ impl Renderer {
         }
 
         frame.render(encoder)?;
-        surface.present(frame)?;
+        let submit_tv = surface.present(frame)?;
+
+        if let Some(level) = self.level.as_mut() {
+            level.wall_atlas.mark_referenced(submit_tv);
+            level.flat_atlas.mark_referenced(submit_tv);
+            level.palette.mark_referenced(submit_tv);
+            level.sky_texture.mark_referenced(submit_tv);
+        }
+
         Ok(())
     }
 
