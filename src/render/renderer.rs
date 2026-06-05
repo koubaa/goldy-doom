@@ -8,11 +8,10 @@ use goldy::types::{
     IndexFormat, SamplerDesc, SpatialAccess, TextureFlags, TextureFormat,
 };
 use goldy::{
-    Buffer, BufferPool, BufferView, CommandEncoder, Device, Instance, LayoutCheckable, Parcel,
+    Buffer, CommandEncoder, Device, Instance, LayoutCheckable, MosaicSlot, Parcel,
     RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, ShaderLibrary, ShaderModule,
     StructuredBufferElement, Context as GpuContext, Surface,
 };
-use std::mem::size_of;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -41,17 +40,17 @@ const PC_SAMPLER: usize = 6;
 const NUM_PUSH_CONSTANTS: usize = 7;
 
 struct LevelGpuResources {
-    pool: BufferPool,
-    static_vb: BufferView,
-    static_ib: BufferView,
+    geometry: Parcel,
+    static_vb: MosaicSlot,
+    static_ib: MosaicSlot,
     static_index_count: u32,
 
-    sky_vb: BufferView,
-    sky_ib: BufferView,
+    sky_vb: MosaicSlot,
+    sky_ib: MosaicSlot,
     sky_index_count: u32,
 
-    decor_vb: BufferView,
-    decor_ib: BufferView,
+    decor_vb: MosaicSlot,
+    decor_ib: MosaicSlot,
     decor_index_count: u32,
 
     wall_atlas: Parcel,
@@ -257,33 +256,24 @@ impl Renderer {
         sky_texture: Option<(Vec<u8>, [usize; 2])>,
         tiled_band_size: f32,
     ) -> Result<()> {
-        // Single BufferPool for all level geometry — one GPU allocation, six views.
-        let total = BufferPool::padded_size(&[
-            (mesh.static_vertices.len(), size_of::<StaticVertex>()),
-            (mesh.static_indices.len(), size_of::<u32>()),
-            (mesh.sky_vertices.len(), size_of::<SkyVertex>()),
-            (mesh.sky_indices.len(), size_of::<u32>()),
-            (mesh.decor_vertices.len().max(1), size_of::<SpriteVertex>()),
-            (mesh.decor_indices.len().max(1), size_of::<u32>()),
-        ]);
-
-        let mut pool = BufferPool::new(&self.device, total).context("level geometry buffer pool")?;
-
-        let static_vb = pool.alloc_with_data(&mesh.static_vertices)?;
-        let static_ib = pool.alloc_with_data(&mesh.static_indices)?;
-        let sky_vb = pool.alloc_with_data(&mesh.sky_vertices)?;
-        let sky_ib = pool.alloc_with_data(&mesh.sky_indices)?;
+        // Single mosaic parcel for all level geometry — one GPU allocation, six sub-views.
+        let mut m = self.retained_pool.mosaic();
+        let static_vb = m.emplace(&mesh.static_vertices);
+        let static_ib = m.emplace(&mesh.static_indices);
+        let sky_vb = m.emplace(&mesh.sky_vertices);
+        let sky_ib = m.emplace(&mesh.sky_indices);
 
         let decor_vb = if mesh.decor_vertices.is_empty() {
-            pool.alloc_with_data(&[SpriteVertex::zeroed()])?
+            m.emplace(&[SpriteVertex::zeroed()])
         } else {
-            pool.alloc_with_data(&mesh.decor_vertices)?
+            m.emplace(&mesh.decor_vertices)
         };
         let decor_ib = if mesh.decor_indices.is_empty() {
-            pool.alloc_with_data(&[0u32])?
+            m.emplace(&[0u32])
         } else {
-            pool.alloc_with_data(&mesh.decor_indices)?
+            m.emplace(&mesh.decor_indices)
         };
+        let geometry = m.build().context("level geometry mosaic")?;
 
         // Wall atlas: u16 raw bytes → Rg8Unorm (R=palette_idx, G=transparency).
         let (wall_w, wall_h) = (wall_atlas.1[0] as u32, wall_atlas.1[1] as u32);
@@ -368,7 +358,7 @@ impl Renderer {
 
 
         self.level = Some(LevelGpuResources {
-            pool,
+            geometry,
             static_vb,
             static_ib,
             static_index_count: mesh.static_indices.len() as u32,
@@ -455,16 +445,16 @@ impl Renderer {
             if level.sky_index_count > 0 {
                 pass.set_pipeline(sky_pipeline);
                 pass.bind_resources_raw(&push_constants);
-                pass.set_vertex_buffer(0, &level.sky_vb);
-                pass.set_index_buffer(&level.sky_ib, IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, level.geometry.view(level.sky_vb));
+                pass.set_index_buffer(level.geometry.view(level.sky_ib), IndexFormat::Uint32);
                 pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
             }
 
             if level.static_index_count > 0 {
                 pass.set_pipeline(static_pipeline);
                 pass.bind_resources_raw(&push_constants);
-                pass.set_vertex_buffer(0, &level.static_vb);
-                pass.set_index_buffer(&level.static_ib, IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, level.geometry.view(level.static_vb));
+                pass.set_index_buffer(level.geometry.view(level.static_ib), IndexFormat::Uint32);
                 pass.draw_indexed(0..level.static_index_count, 0, 0..1);
             }
 
@@ -472,8 +462,8 @@ impl Renderer {
                 let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
                 pass.set_pipeline(sprite_pipeline);
                 pass.bind_resources_raw(&push_constants);
-                pass.set_vertex_buffer(0, &level.decor_vb);
-                pass.set_index_buffer(&level.decor_ib, IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, level.geometry.view(level.decor_vb));
+                pass.set_index_buffer(level.geometry.view(level.decor_ib), IndexFormat::Uint32);
                 pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
             }
         }
@@ -482,6 +472,11 @@ impl Renderer {
         let submit_tv = surface.present(frame)?;
 
         if let Some(level) = self.level.as_mut() {
+            // TODO(no-command-encoder): manual stamp only because doom submits via CommandEncoder,
+            // which bypasses the task graph. Once rendering goes through parcel-aware graph submits
+            // the runtime stamps last_referenced automatically.
+            // See docu/development/projects/diwan/no-command-encoder/project.md
+            level.geometry.mark_referenced(submit_tv);
             level.wall_atlas.mark_referenced(submit_tv);
             level.flat_atlas.mark_referenced(submit_tv);
             level.palette.mark_referenced(submit_tv);
