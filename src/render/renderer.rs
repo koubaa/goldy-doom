@@ -5,12 +5,12 @@ use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use goldy::types::{
     AddressMode, BufferKind, CompareFunction, DepthFormat, DepthStencilState, FilterMode,
-    IndexFormat, ResourceAccess, SamplerDesc, TextureFlags, TextureFormat, TextureKind,
+    IndexFormat, SamplerDesc, TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    CommandEncoder, Context as GpuContext, Device, Instance, LayoutCheckable, MosaicSlot,
-    NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RenderTarget, RetainedPool, Sampler,
-    ShaderLibrary, ShaderModule, StructuredBufferElement, Surface, TaskGraph,
+    Context as GpuContext, Device, Instance, LayoutCheckable, MosaicSlot, NodeAccess, Parcel,
+    RenderPipeline, RenderPipelineDesc, RenderTarget, RetainedPool, Sampler, ShaderLibrary,
+    ShaderModule, ShaderResourceSlot, StructuredBufferElement, Surface, TaskGraph,
 };
 use std::sync::Arc;
 use winit::window::Window;
@@ -28,16 +28,6 @@ pub struct SceneUniforms {
 }
 
 impl StructuredBufferElement for SceneUniforms {}
-
-/// Push constant slot indices — must match doom_common.slang PC_* constants.
-const PC_SCENE: usize = 0;
-const PC_LIGHTS: usize = 1;
-const PC_WALL: usize = 2;
-const PC_FLAT: usize = 3;
-const PC_PALETTE: usize = 4;
-const PC_SKY: usize = 5;
-const PC_SAMPLER: usize = 6;
-const NUM_PUSH_CONSTANTS: usize = 7;
 
 struct LevelGpuResources {
     geometry: Parcel,
@@ -457,91 +447,63 @@ impl Renderer {
             )?;
         }
 
-        let scene_idx = self
-            .scene_buf
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-        let light_idx = self
-            .light_buf
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-        let wall_idx = level
-            .wall_atlas
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-        let flat_idx = level
-            .flat_atlas
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-        let palette_idx = level
-            .palette
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-        let sky_idx = level
-            .sky_texture
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-        let sampler_idx = self
-            .sampler
-            .resource_index(ResourceAccess::Read)
-            .unwrap_or(0);
-
-        let push_constants = [
-            scene_idx,
-            light_idx,
-            wall_idx,
-            flat_idx,
-            palette_idx,
-            sky_idx,
-            sampler_idx,
+        let shader_resources = [
+            ShaderResourceSlot::Parcel {
+                parcel: &self.scene_buf,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &self.light_buf,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.wall_atlas,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.flat_atlas,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.palette,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.sky_texture,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Sampler(&self.sampler),
         ];
 
-        let mut encoder = CommandEncoder::new();
-        {
-            let mut pass = encoder.begin_render_pass();
-            pass.clear(goldy::Color::BLACK);
-            pass.clear_depth(1.0);
+        let mut pass = self.frame_graph.render_pass("doom", scene_rt);
+        pass.bind_shader_resources(&shader_resources);
+        pass.bind_parcel_mut(&level.geometry, NodeAccess::Read);
+        pass.clear(goldy::Color::BLACK);
+        pass.clear_depth(1.0);
 
-            // Push constants must be set AFTER set_pipeline (root signature must be bound first in D3D12,
-            // and SetGraphicsRootSignature invalidates all root arguments).
-
-            // Sky first (background), then static (walls/floors), then decor
-            if level.sky_index_count > 0 {
-                pass.set_pipeline(sky_pipeline);
-                pass.bind_resources_raw(&push_constants);
-                pass.set_vertex_buffer(0, level.geometry.view(level.sky_vb));
-                pass.set_index_buffer(level.geometry.view(level.sky_ib), IndexFormat::Uint32);
-                pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
-            }
-
-            if level.static_index_count > 0 {
-                pass.set_pipeline(static_pipeline);
-                pass.bind_resources_raw(&push_constants);
-                pass.set_vertex_buffer(0, level.geometry.view(level.static_vb));
-                pass.set_index_buffer(level.geometry.view(level.static_ib), IndexFormat::Uint32);
-                pass.draw_indexed(0..level.static_index_count, 0, 0..1);
-            }
-
-            if level.decor_index_count > 0 {
-                let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
-                pass.set_pipeline(sprite_pipeline);
-                pass.bind_resources_raw(&push_constants);
-                pass.set_vertex_buffer(0, level.geometry.view(level.decor_vb));
-                pass.set_index_buffer(level.geometry.view(level.decor_ib), IndexFormat::Uint32);
-                pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
-            }
+        if level.sky_index_count > 0 {
+            pass.set_pipeline(sky_pipeline);
+            pass.set_vertex_buffer(0, level.geometry.view(level.sky_vb));
+            pass.set_index_buffer(level.geometry.view(level.sky_ib), IndexFormat::Uint32);
+            pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
         }
 
-        self.frame_graph
-            .render_pass("doom", scene_rt)
-            .bind_parcel(&self.scene_buf, NodeAccess::Read)
-            .bind_parcel(&self.light_buf, NodeAccess::Read)
-            .bind_parcel(&level.geometry, NodeAccess::Read)
-            .bind_parcel(&level.wall_atlas, NodeAccess::Read)
-            .bind_parcel(&level.flat_atlas, NodeAccess::Read)
-            .bind_parcel(&level.palette, NodeAccess::Read)
-            .bind_parcel(&level.sky_texture, NodeAccess::Read)
-            .finish_encoder(encoder);
+        if level.static_index_count > 0 {
+            pass.set_pipeline(static_pipeline);
+            pass.set_vertex_buffer(0, level.geometry.view(level.static_vb));
+            pass.set_index_buffer(level.geometry.view(level.static_ib), IndexFormat::Uint32);
+            pass.draw_indexed(0..level.static_index_count, 0, 0..1);
+        }
+
+        if level.decor_index_count > 0 {
+            let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
+            pass.set_pipeline(sprite_pipeline);
+            pass.set_vertex_buffer(0, level.geometry.view(level.decor_vb));
+            pass.set_index_buffer(level.geometry.view(level.decor_ib), IndexFormat::Uint32);
+            pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
+        }
+
+        pass.finish_recorded();
 
         let swapchain = self.frame_graph.declare_swapchain_output();
         self.frame_graph
