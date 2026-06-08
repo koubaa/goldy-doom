@@ -488,21 +488,24 @@ impl Renderer {
         frame.render(encoder)?;
         let submit_tv = surface.present(frame)?;
 
+        //TODO - stop using CommandEncoder and use the TaskGraph.
+
         // Renew the reuse gate: record the timeline that just referenced these parcels so the
         // next frame's copy_into waits for this frame's GPU reads to retire.
-        self.scene_buf.mark_referenced(submit_tv);
-        self.light_buf.mark_referenced(submit_tv);
+        let ctx = self.context.as_ref().expect("context");
+        ctx.stamp_parcel(&self.scene_buf, submit_tv);
+        ctx.stamp_parcel(&self.light_buf, submit_tv);
 
         if let Some(level) = self.level.as_mut() {
             // TODO(no-command-encoder): manual stamp only because doom submits via CommandEncoder,
             // which bypasses the task graph. Once rendering goes through parcel-aware graph submits
             // the runtime stamps last_referenced automatically.
             // See docu/development/projects/diwan/no-command-encoder/project.md
-            level.geometry.mark_referenced(submit_tv);
-            level.wall_atlas.mark_referenced(submit_tv);
-            level.flat_atlas.mark_referenced(submit_tv);
-            level.palette.mark_referenced(submit_tv);
-            level.sky_texture.mark_referenced(submit_tv);
+            ctx.stamp_parcel(&level.geometry, submit_tv);
+            ctx.stamp_parcel(&level.wall_atlas, submit_tv);
+            ctx.stamp_parcel(&level.flat_atlas, submit_tv);
+            ctx.stamp_parcel(&level.palette, submit_tv);
+            ctx.stamp_parcel(&level.sky_texture, submit_tv);
         }
 
         Ok(())
