@@ -72,9 +72,16 @@ impl TextureDirectory {
             textures_buffer.clear();
             lump.read_bytes_into(&mut textures_buffer)?;
             let num_textures = read_textures(&textures_buffer, &patches, &mut textures)?;
-            info!("  {:4} textures in {}", num_textures, String::from_utf8_lossy(lump_name));
+            info!(
+                "  {:4} textures in {}",
+                num_textures,
+                String::from_utf8_lossy(lump_name)
+            );
         }
-        info!("Done in {:.2}ms.", start_time.elapsed().as_secs_f64() * 1000.0);
+        info!(
+            "Done in {:.2}ms.",
+            start_time.elapsed().as_secs_f64() * 1000.0
+        );
 
         let flats = read_flats(wad)?;
         info!("  {:4} flats", flats.len());
@@ -99,10 +106,18 @@ impl TextureDirectory {
     pub fn flat(&self, name: WadName) -> Option<&Flat> {
         self.flats.get(&name)
     }
-    pub fn num_palettes(&self) -> usize { self.palettes.len() }
-    pub fn palette(&self, index: usize) -> &Palette { &self.palettes[index] }
-    pub fn num_colormaps(&self) -> usize { self.colormaps.len() }
-    pub fn colormap(&self, index: usize) -> &Colormap { &self.colormaps[index] }
+    pub fn num_palettes(&self) -> usize {
+        self.palettes.len()
+    }
+    pub fn palette(&self, index: usize) -> &Palette {
+        &self.palettes[index]
+    }
+    pub fn num_colormaps(&self) -> usize {
+        self.colormaps.len()
+    }
+    pub fn colormap(&self, index: usize) -> &Colormap {
+        &self.colormaps[index]
+    }
 
     pub fn build_palette_texture(
         &self,
@@ -113,24 +128,40 @@ impl TextureDirectory {
         let num_colormaps = colormap_end - colormap_start;
         let mut mapped = vec![0u8; 256 * num_colormaps * 3];
         let palette = &self.palettes[palette];
-        for (i_colormap, colormap) in self.colormaps.iter().enumerate().take(colormap_end).skip(colormap_start) {
+        for (i_colormap, colormap) in self
+            .colormaps
+            .iter()
+            .enumerate()
+            .take(colormap_end)
+            .skip(colormap_start)
+        {
             let offset = i_colormap * 256 * 3;
             for (i_color, color) in colormap.0.iter().enumerate() {
                 mapped[i_color * 3 + offset..][..3]
                     .copy_from_slice(&palette.0[usize::from(*color) * 3..][..3]);
             }
         }
-        MappedPalette { pixels: mapped, colormaps: colormap_end - colormap_start + 1 }
+        MappedPalette {
+            pixels: mapped,
+            colormaps: colormap_end - colormap_start + 1,
+        }
     }
 
     pub fn build_texture_atlas<T>(&self, names_iter: T) -> (TransparentImage, BoundsLookup)
-    where T: IntoIterator<Item = WadName>
+    where
+        T: IntoIterator<Item = WadName>,
     {
         let entries = ordered_atlas_entries(&self.animated_walls, |n| self.texture(n), names_iter);
         let max_image_width = if let Some(w) = entries.iter().map(|e| e.image.width()).max() {
             w
         } else {
-            return (TransparentImage { pixels: Vec::new(), size: [0, 0] }, BoundsLookup::new());
+            return (
+                TransparentImage {
+                    pixels: Vec::new(),
+                    size: [0, 0],
+                },
+                BoundsLookup::new(),
+            );
         };
         let num_pixels: usize = entries.iter().map(|e| e.image.num_pixels()).sum();
         let min_atlas_size = [cmp::min(128, next_pow2(max_image_width)), 128usize];
@@ -139,13 +170,17 @@ impl TextureDirectory {
         let mut atlas_size = min_atlas_size;
         loop {
             if atlas_size[0] <= atlas_size[1] {
-                if atlas_size[0] == max_size { panic!("Could not fit wall atlas."); }
+                if atlas_size[0] == max_size {
+                    panic!("Could not fit wall atlas.");
+                }
                 atlas_size[0] *= 2;
                 atlas_size[1] = 128;
             } else {
                 atlas_size[1] *= 2;
             }
-            if atlas_size[0] * atlas_size[1] >= num_pixels { break; }
+            if atlas_size[0] * atlas_size[1] >= num_pixels {
+                break;
+            }
         }
 
         let mut transposed = false;
@@ -161,26 +196,40 @@ impl TextureDirectory {
                     offset[1] += row_height;
                     row_height = 0;
                 }
-                if size[1] > row_height { row_height = size[1]; }
-                if offset[1] + size[1] > atlas_size[1] { failed = true; break; }
-                positions.push(AtlasPosition { offset: [offset[0] as isize, offset[1] as isize], row_height });
+                if size[1] > row_height {
+                    row_height = size[1];
+                }
+                if offset[1] + size[1] > atlas_size[1] {
+                    failed = true;
+                    break;
+                }
+                positions.push(AtlasPosition {
+                    offset: [offset[0] as isize, offset[1] as isize],
+                    row_height,
+                });
                 offset[0] += size[0];
             }
             if failed {
                 positions.clear();
                 atlas_size = [atlas_size[1], atlas_size[0]];
                 transposed = !transposed;
-                if transposed && atlas_size[0] != atlas_size[1] { continue; }
+                if transposed && atlas_size[0] != atlas_size[1] {
+                    continue;
+                }
                 transposed = false;
                 loop {
                     if atlas_size[0] <= atlas_size[1] {
-                        if atlas_size[0] == max_size { panic!("Could not fit wall atlas."); }
+                        if atlas_size[0] == max_size {
+                            panic!("Could not fit wall atlas.");
+                        }
                         atlas_size[0] *= 2;
                         atlas_size[1] = 128;
                     } else {
                         atlas_size[1] *= 2;
                     }
-                    if atlas_size[0] * atlas_size[1] >= num_pixels { break; }
+                    if atlas_size[0] * atlas_size[1] >= num_pixels {
+                        break;
+                    }
                 }
             } else {
                 break;
@@ -196,13 +245,17 @@ impl TextureDirectory {
             bound_map.insert(entry.name, img_bound(ref_pos, entry));
         }
 
-        let tex = TransparentImage { size: atlas_size, pixels: atlas.into_pixels() };
+        let tex = TransparentImage {
+            size: atlas_size,
+            pixels: atlas.into_pixels(),
+        };
         info!("Texture atlas size: {:?}", atlas_size);
         (tex, bound_map)
     }
 
     pub fn build_flat_atlas<T>(&self, names_iter: T) -> (OpaqueImage, BoundsLookup)
-    where T: IntoIterator<Item = WadName>
+    where
+        T: IntoIterator<Item = WadName>,
     {
         let names = ordered_atlas_entries(&self.animated_flats, |n| self.flat(n), names_iter);
         let num_names = names.len();
@@ -221,21 +274,30 @@ impl TextureDirectory {
             if entry.frame_offset == 0 {
                 anim_start_pos = [off[0] as f32, off[1] as f32];
             }
-            offsets.insert(entry.name, Bounds {
-                pos: anim_start_pos,
-                size: [64.0, 64.0],
-                num_frames: entry.num_frames,
-                row_height: 64,
-            });
+            offsets.insert(
+                entry.name,
+                Bounds {
+                    pos: anim_start_pos,
+                    size: [64.0, 64.0],
+                    num_frames: entry.num_frames,
+                    row_height: 64,
+                },
+            );
             for y in 0..64 {
                 for x in 0..64 {
                     data[off[0] + x + (y + off[1]) * width] = entry.image[x + y * 64];
                 }
             }
             column += 1;
-            if column == flats_per_row { column = 0; row += 1; }
+            if column == flats_per_row {
+                column = 0;
+                row += 1;
+            }
         }
-        let tex = OpaqueImage { pixels: data, size: [width, height] };
+        let tex = OpaqueImage {
+            pixels: data,
+            size: [width, height],
+        };
         (tex, offsets)
     }
 }
@@ -254,7 +316,9 @@ struct AtlasPosition {
 
 fn next_pow2(x: usize) -> usize {
     let mut pow2 = 1;
-    while pow2 < x { pow2 *= 2; }
+    while pow2 < x {
+        pow2 *= 2;
+    }
     pow2
 }
 
@@ -263,7 +327,9 @@ const TEXTURE_LUMP_NAMES: &[&[u8; 8]] = &[b"TEXTURE1", b"TEXTURE2"];
 fn read_patches(wad: &Archive) -> Result<Vec<(WadName, Option<Image>)>> {
     let pnames_buffer = wad.required_named_lump(b"PNAMES\0\0")?.read_bytes()?;
     let mut lump = &pnames_buffer[..];
-    let num_patches = lump.read_u32::<LittleEndian>().context("Missing PNAMES count")? as usize;
+    let num_patches = lump
+        .read_u32::<LittleEndian>()
+        .context("Missing PNAMES count")? as usize;
     let mut patches = Vec::with_capacity(num_patches);
     info!("Reading {} patches....", num_patches);
     let start_time = Instant::now();
@@ -271,7 +337,10 @@ fn read_patches(wad: &Archive) -> Result<Vec<(WadName, Option<Image>)>> {
     for i_patch in 0..num_patches {
         let name: WadName = match bincode::deserialize_from(&mut lump) {
             Ok(name) => name,
-            Err(e) => { error!("Failed to read patch name {}: {}", i_patch, e); continue; }
+            Err(e) => {
+                error!("Failed to read patch name {}: {}", i_patch, e);
+                continue;
+            }
         };
         match wad.named_lump(&name)? {
             Some(lump) => {
@@ -279,14 +348,20 @@ fn read_patches(wad: &Archive) -> Result<Vec<(WadName, Option<Image>)>> {
                 lump.read_bytes_into(&mut image_buffer)?;
                 let image = match Image::from_buffer(&image_buffer) {
                     Ok(i) => Some(i),
-                    Err(e) => { error!("Skipping patch `{}`: {}", name, e); None }
+                    Err(e) => {
+                        error!("Skipping patch `{}`: {}", name, e);
+                        None
+                    }
                 };
                 patches.push((name, image));
             }
             None => patches.push((name, None)),
         }
     }
-    info!("Done in {:.2}ms.", start_time.elapsed().as_secs_f64() * 1000.0);
+    info!(
+        "Done in {:.2}ms.",
+        start_time.elapsed().as_secs_f64() * 1000.0
+    );
     Ok(patches)
 }
 
@@ -320,7 +395,12 @@ where
             Some(frames) => {
                 for (off, &n) in frames.iter().enumerate() {
                     if let Some(image) = image_lookup(n) {
-                        entries.push(AtlasEntry { name: n, image, frame_offset: off, num_frames: frames.len() });
+                        entries.push(AtlasEntry {
+                            name: n,
+                            image,
+                            frame_offset: off,
+                            num_frames: frames.len(),
+                        });
                     } else {
                         error!("Unable to find texture/sprite: {}", n);
                     }
@@ -328,7 +408,12 @@ where
             }
             None => {
                 if let Some(image) = image_lookup(name) {
-                    entries.push(AtlasEntry { name, image, frame_offset: 0, num_frames: 1 });
+                    entries.push(AtlasEntry {
+                        name,
+                        image,
+                        frame_offset: 0,
+                        num_frames: 1,
+                    });
                 }
             }
         }
@@ -337,7 +422,8 @@ where
 }
 
 fn search_for_frame(search_for: WadName, animations: &[Vec<WadName>]) -> Option<&[WadName]> {
-    animations.iter()
+    animations
+        .iter()
         .find(|anim| anim.iter().any(|&f| f == search_for))
         .map(|a| &a[..])
 }
@@ -353,11 +439,18 @@ fn read_sprites(wad: &Archive, textures: &mut IndexMap<WadName, Image>) -> Resul
         image_buffer.clear();
         lump.read_bytes_into(&mut image_buffer)?;
         match Image::from_buffer(&image_buffer) {
-            Ok(texture) => { textures.insert(lump.name(), texture); }
-            Err(e) => { error!("Skipping sprite {}: {}", lump.name(), e); }
+            Ok(texture) => {
+                textures.insert(lump.name(), texture);
+            }
+            Err(e) => {
+                error!("Skipping sprite {}: {}", lump.name(), e);
+            }
         }
     }
-    info!("Done in {:.2}ms.", start_time.elapsed().as_secs_f64() * 1000.0);
+    info!(
+        "Done in {:.2}ms.",
+        start_time.elapsed().as_secs_f64() * 1000.0
+    );
     Ok(end_index - start_index)
 }
 
@@ -367,36 +460,61 @@ fn read_textures(
     textures: &mut IndexMap<WadName, Image>,
 ) -> Result<usize> {
     let mut lump = lump_buffer;
-    let num_textures = lump.read_u32::<LittleEndian>().context("Missing texture count")? as usize;
+    let num_textures = lump
+        .read_u32::<LittleEndian>()
+        .context("Missing texture count")? as usize;
     let offsets_end = num_textures * mem::size_of::<u32>();
-    ensure!(offsets_end < lump.len(), "Textures lump too small for offsets");
+    ensure!(
+        offsets_end < lump.len(),
+        "Textures lump too small for offsets"
+    );
     let mut offsets = &lump[..offsets_end];
 
     for i_texture in 0..num_textures {
-        let offset = offsets.read_u32::<LittleEndian>().expect("offset buffer underrun") as usize;
+        let offset = offsets
+            .read_u32::<LittleEndian>()
+            .expect("offset buffer underrun") as usize;
         ensure!(offset < lump_buffer.len(), "Texture offset out of bounds");
         lump = &lump_buffer[offset..];
         let header: WadTextureHeader = match bincode::deserialize_from(&mut lump) {
             Ok(h) => h,
-            Err(e) => { error!("Skipping texture {}: {}", i_texture, e); continue; }
+            Err(e) => {
+                error!("Skipping texture {}: {}", i_texture, e);
+                continue;
+            }
         };
         let mut image = match Image::new_from_header(&header) {
             Ok(img) => img,
-            Err(e) => { error!("Skipping texture {}: {}", header.name, e); continue; }
+            Err(e) => {
+                error!("Skipping texture {}: {}", header.name, e);
+                continue;
+            }
         };
         for i_patch in 0..header.num_patches {
             let pref: WadTexturePatchRef = match bincode::deserialize_from(&mut lump) {
                 Ok(p) => p,
-                Err(e) => { error!("Skipping patch {} in {}: {}", i_patch, header.name, e); continue; }
+                Err(e) => {
+                    error!("Skipping patch {} in {}: {}", i_patch, header.name, e);
+                    continue;
+                }
             };
             let offset = [
                 pref.origin_x as isize,
-                if pref.origin_y <= 0 { 0 } else { pref.origin_y as isize },
+                if pref.origin_y <= 0 {
+                    0
+                } else {
+                    pref.origin_y as isize
+                },
             ];
             match patches.get(pref.patch as usize) {
                 Some((_, Some(patch))) => image.blit(patch, offset, i_patch == 0),
-                Some((pn, None)) => error!("PatchRef {} required by {} is missing.", pn, header.name),
-                None => error!("PatchRef index {} out of bounds in {}", pref.patch, header.name),
+                Some((pn, None)) => {
+                    error!("PatchRef {} required by {} is missing.", pn, header.name)
+                }
+                None => error!(
+                    "PatchRef index {} out of bounds in {}",
+                    pref.patch, header.name
+                ),
             }
         }
         textures.insert(header.name, image);
@@ -410,7 +528,9 @@ fn read_flats(wad: &Archive) -> Result<IndexMap<WadName, Flat>> {
     let mut flats = IndexMap::new();
     for i_lump in start..end {
         let lump = wad.lump_by_index(i_lump)?;
-        if lump.is_virtual() { continue; }
+        if lump.is_virtual() {
+            continue;
+        }
         flats.insert(lump.name(), lump.read_bytes()?);
     }
     Ok(flats)

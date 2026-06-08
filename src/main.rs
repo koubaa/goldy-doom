@@ -11,7 +11,7 @@ use player::Player;
 use render::level_builder::LevelBuilder;
 use render::renderer::Renderer;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use wad::tex::TextureDirectory;
 use wad::{Archive, Level, LevelAnalysis, LevelWalker};
 use winit::application::ApplicationHandler;
@@ -36,6 +36,8 @@ struct Args {
     level: usize,
 }
 
+const FPS_LOG_INTERVAL: Duration = Duration::from_secs(5);
+
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
@@ -45,26 +47,32 @@ fn main() -> Result<()> {
     info!("Meta: {:?}", args.meta);
     info!("Level: {}", args.level);
 
-    let archive = Archive::open(&args.wad, &args.meta)
-        .context("Failed to open WAD archive")?;
+    let archive = Archive::open(&args.wad, &args.meta).context("Failed to open WAD archive")?;
 
     info!("WAD has {} levels", archive.num_levels());
-    anyhow::ensure!(args.level < archive.num_levels(), "Level {} out of range", args.level);
+    anyhow::ensure!(
+        args.level < archive.num_levels(),
+        "Level {} out of range",
+        args.level
+    );
 
-    let tex = TextureDirectory::from_archive(&archive)
-        .context("Failed to read texture directory")?;
-    let level = Level::from_archive(&archive, args.level)
-        .context("Failed to load level")?;
+    let tex =
+        TextureDirectory::from_archive(&archive).context("Failed to read texture directory")?;
+    let level = Level::from_archive(&archive, args.level).context("Failed to load level")?;
     let analysis = LevelAnalysis::new(&level, archive.metadata());
 
     let level_name = archive.level_lump(args.level)?.name();
     info!("Walking level {}...", level_name);
 
-    let wall_names: Vec<_> = level.sidedefs.iter()
+    let wall_names: Vec<_> = level
+        .sidedefs
+        .iter()
         .flat_map(|s| [s.upper_texture, s.middle_texture, s.lower_texture])
         .filter(|n| !wad::util::is_untextured(*n))
         .collect();
-    let flat_names: Vec<_> = level.sectors.iter()
+    let flat_names: Vec<_> = level
+        .sectors
+        .iter()
         .flat_map(|s| [s.floor_texture, s.ceiling_texture])
         .filter(|n| !wad::util::is_sky_flat(*n))
         .collect();
@@ -75,14 +83,19 @@ fn main() -> Result<()> {
 
     let mut builder = LevelBuilder::new(wall_bounds, flat_bounds, decor_bounds);
     {
-        let mut walker = LevelWalker::new(&level, &analysis, &tex, archive.metadata(), &mut builder);
+        let mut walker =
+            LevelWalker::new(&level, &analysis, &tex, archive.metadata(), &mut builder);
         walker.walk();
     }
     let mesh_data = builder.finish();
     let start_pos = mesh_data.start_pos;
     let start_yaw = mesh_data.start_yaw;
 
-    info!("Start position: {:?}, yaw: {:.1}°", start_pos, start_yaw.to_degrees());
+    info!(
+        "Start position: {:?}, yaw: {:.1}°",
+        start_pos,
+        start_yaw.to_degrees()
+    );
 
     let palette = tex.build_palette_texture(0, 0, tex.num_colormaps());
 
@@ -94,7 +107,10 @@ fn main() -> Result<()> {
             tex.texture(sky_meta.texture_name).map(|img| {
                 let size = img.size();
                 let r8: Vec<u8> = img.pixels().iter().map(|p| (p & 0xFF) as u8).collect();
-                info!("Sky texture: {} ({}x{}), tiled_band_size={}", sky_meta.texture_name, size[0], size[1], sky_meta.tiled_band_size);
+                info!(
+                    "Sky texture: {} ({}x{}), tiled_band_size={}",
+                    sky_meta.texture_name, size[0], size[1], sky_meta.tiled_band_size
+                );
                 ((r8, size), sky_meta.tiled_band_size)
             })
         })
@@ -110,6 +126,8 @@ fn main() -> Result<()> {
         renderer: Renderer::new()?,
         player: Player::new(start_pos, start_yaw),
         last_frame: Instant::now(),
+        fps_window_start: Instant::now(),
+        fps_frame_count: 0,
         time: 0.0,
         mesh_data: Some(mesh_data),
         palette_pixels: palette.pixels,
@@ -129,6 +147,8 @@ struct App {
     renderer: Renderer,
     player: Player,
     last_frame: Instant,
+    fps_window_start: Instant,
+    fps_frame_count: u32,
     time: f32,
     mesh_data: Option<render::level_builder::LevelMeshData>,
     palette_pixels: Vec<u8>,
@@ -147,7 +167,11 @@ impl ApplicationHandler for App {
                 .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
             match event_loop.create_window(attrs) {
                 Ok(window) => {
-                    info!("Window created: {}x{}", window.inner_size().width, window.inner_size().height);
+                    info!(
+                        "Window created: {}x{}",
+                        window.inner_size().width,
+                        window.inner_size().height
+                    );
                     window.set_cursor_visible(false);
 
                     if let Err(e) = self.renderer.init_surface(&window) {
@@ -215,8 +239,20 @@ impl ApplicationHandler for App {
                 let view = self.player.view_matrix();
                 let proj = self.player.projection_matrix(aspect);
 
-                if let Err(e) = self.renderer.render_frame(view, proj, self.time, &self.light_buffer) {
+                if let Err(e) =
+                    self.renderer
+                        .render_frame(view, proj, self.time, &self.light_buffer)
+                {
                     log::error!("Render error: {}", e);
+                }
+
+                self.fps_frame_count += 1;
+                let fps_elapsed = now.duration_since(self.fps_window_start);
+                if fps_elapsed >= FPS_LOG_INTERVAL {
+                    let avg_fps = self.fps_frame_count as f64 / fps_elapsed.as_secs_f64();
+                    println!("Average FPS: {avg_fps:.1}");
+                    self.fps_window_start = now;
+                    self.fps_frame_count = 0;
                 }
 
                 window.request_redraw();
@@ -225,7 +261,12 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn device_event(&mut self, _event_loop: &ActiveEventLoop, _device_id: DeviceId, event: DeviceEvent) {
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             self.player.on_mouse_motion(delta.0, delta.1);
         }

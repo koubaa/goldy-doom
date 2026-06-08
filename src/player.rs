@@ -1,7 +1,7 @@
 use glam::{Mat4, Quat, Vec3};
+use std::collections::HashSet;
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
-use std::collections::HashSet;
 
 pub struct Player {
     pub position: Vec3,
@@ -29,8 +29,12 @@ impl Player {
 
     pub fn on_key(&mut self, key: KeyCode, state: ElementState) {
         match state {
-            ElementState::Pressed => { self.keys_held.insert(key); }
-            ElementState::Released => { self.keys_held.remove(&key); }
+            ElementState::Pressed => {
+                self.keys_held.insert(key);
+            }
+            ElementState::Released => {
+                self.keys_held.remove(&key);
+            }
         }
     }
 
@@ -53,12 +57,24 @@ impl Player {
         let right = Vec3::new(-forward.z, 0.0, forward.x);
 
         let mut move_dir = Vec3::ZERO;
-        if self.keys_held.contains(&KeyCode::KeyW) { move_dir += forward; }
-        if self.keys_held.contains(&KeyCode::KeyS) { move_dir -= forward; }
-        if self.keys_held.contains(&KeyCode::KeyD) { move_dir += right; }
-        if self.keys_held.contains(&KeyCode::KeyA) { move_dir -= right; }
-        if self.keys_held.contains(&KeyCode::Space) { move_dir.y += 1.0; }
-        if self.keys_held.contains(&KeyCode::ShiftLeft) { move_dir.y -= 1.0; }
+        if self.keys_held.contains(&KeyCode::KeyW) {
+            move_dir += forward;
+        }
+        if self.keys_held.contains(&KeyCode::KeyS) {
+            move_dir -= forward;
+        }
+        if self.keys_held.contains(&KeyCode::KeyD) {
+            move_dir += right;
+        }
+        if self.keys_held.contains(&KeyCode::KeyA) {
+            move_dir -= right;
+        }
+        if self.keys_held.contains(&KeyCode::Space) {
+            move_dir.y += 1.0;
+        }
+        if self.keys_held.contains(&KeyCode::ShiftLeft) {
+            move_dir.y -= 1.0;
+        }
 
         if move_dir.length_squared() > 0.0 {
             move_dir = move_dir.normalize();

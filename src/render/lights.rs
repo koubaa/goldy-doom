@@ -6,15 +6,20 @@ pub struct Lights {
 
 impl Lights {
     pub fn new() -> Self {
-        Self { lights: Vec::with_capacity(256) }
+        Self {
+            lights: Vec::with_capacity(256),
+        }
     }
 
     pub fn push(&mut self, light_info: &LightInfo) -> u8 {
-        self.lights.iter().position(|x| x == light_info).unwrap_or_else(|| {
-            assert!(self.lights.len() < 255);
-            self.lights.push(light_info.clone());
-            self.lights.len() - 1
-        }) as u8
+        self.lights
+            .iter()
+            .position(|x| x == light_info)
+            .unwrap_or_else(|| {
+                assert!(self.lights.len() < 255);
+                self.lights.push(light_info.clone());
+                self.lights.len() - 1
+            }) as u8
     }
 
     pub fn fill_buffer_at(&self, time: f32, buffer: &mut [u8]) {
@@ -23,7 +28,9 @@ impl Lights {
         }
     }
 
-    pub fn len(&self) -> usize { self.lights.len() }
+    pub fn len(&self) -> usize {
+        self.lights.len()
+    }
 }
 
 fn light_level_at(info: &LightInfo, time: f32) -> f32 {
@@ -58,4 +65,6 @@ fn noise(sync: f32, time: f32) -> f32 {
     fract(1.0 + ((sync + time / 1000.0) * 12.9898 + sync * 78.233).sin() * 43758.547)
 }
 
-fn fract(x: f32) -> f32 { x - x.floor() }
+fn fract(x: f32) -> f32 {
+    x - x.floor()
+}

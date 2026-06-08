@@ -18,6 +18,6 @@ pub use self::meta::{MoveEffectDef, SkyMetadata, ThingMetadata, TriggerType, Wad
 pub use self::name::WadName;
 pub use self::tex::{OpaqueImage, TextureDirectory, TransparentImage};
 pub use self::visitor::{
-    Branch, Decor, LevelAnalysis, LevelVisitor, LevelWalker, Marker, MoveEffect, ObjectId,
-    SkyPoly, SkyQuad, StaticPoly, StaticQuad, Trigger,
+    Branch, Decor, LevelAnalysis, LevelVisitor, LevelWalker, Marker, MoveEffect, ObjectId, SkyPoly,
+    SkyQuad, StaticPoly, StaticQuad, Trigger,
 };

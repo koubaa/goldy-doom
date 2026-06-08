@@ -74,13 +74,22 @@ pub trait LevelVisitor: Sized {
     fn visit_bsp_leaf_end(&mut self) {}
     fn visit_bsp_node_end(&mut self) {}
 
-    fn chain<'a, 'b, V: LevelVisitor>(&'a mut self, other: &'b mut V) -> VisitorChain<'a, 'b, Self, V> {
-        VisitorChain { first: self, second: other }
+    fn chain<'a, 'b, V: LevelVisitor>(
+        &'a mut self,
+        other: &'b mut V,
+    ) -> VisitorChain<'a, 'b, Self, V> {
+        VisitorChain {
+            first: self,
+            second: other,
+        }
     }
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub enum Branch { Positive, Negative }
+pub enum Branch {
+    Positive,
+    Negative,
+}
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Marker {
@@ -101,26 +110,36 @@ pub struct Line2 {
 
 impl Line2 {
     pub fn from_two_points(a: Vec2, b: Vec2) -> Self {
-        Self { origin: a, displace: b - a }
+        Self {
+            origin: a,
+            displace: b - a,
+        }
     }
 
     pub fn signed_distance(&self, point: Vec2) -> f32 {
         let d = point - self.origin;
         let n = Vec2::new(-self.displace.y, self.displace.x);
         let len = n.length();
-        if len < 1e-10 { return 0.0; }
+        if len < 1e-10 {
+            return 0.0;
+        }
         d.dot(n) / len
     }
 
     pub fn inverted_halfspaces(&self) -> Self {
-        Self { origin: self.origin, displace: -self.displace }
+        Self {
+            origin: self.origin,
+            displace: -self.displace,
+        }
     }
 
     pub fn intersect_point(&self, other: &Line2) -> Option<Vec2> {
         let d = self.displace;
         let e = other.displace;
         let cross = d.x * e.y - d.y * e.x;
-        if cross.abs() < 1e-10 { return None; }
+        if cross.abs() < 1e-10 {
+            return None;
+        }
         let delta = other.origin - self.origin;
         let t = (delta.x * e.y - delta.y * e.x) / cross;
         Some(self.origin + d * t)
@@ -130,7 +149,9 @@ impl Line2 {
         let d = self.displace;
         let e = other.displace;
         let cross = d.x * e.y - d.y * e.x;
-        if cross.abs() < 1e-10 { return None; }
+        if cross.abs() < 1e-10 {
+            return None;
+        }
         let delta = other.origin - self.origin;
         let t = (delta.x * e.y - delta.y * e.x) / cross;
         let u = (delta.x * d.y - delta.y * d.x) / cross;
@@ -190,12 +211,22 @@ impl DynamicSectorInfo {
             error!("Sector {} has no neighbours", sector_id);
             return;
         };
-        let (first_floor, second_floor) = HeightEffectDef::option_to_heights(effect_def.floor, sector, &heights);
-        let (first_ceiling, second_ceiling) = HeightEffectDef::option_to_heights(effect_def.ceiling, sector, &heights);
+        let (first_floor, second_floor) =
+            HeightEffectDef::option_to_heights(effect_def.floor, sector, &heights);
+        let (first_ceiling, second_ceiling) =
+            HeightEffectDef::option_to_heights(effect_def.ceiling, sector, &heights);
         let repeat = effect_def.repeat;
 
-        merge_range(&mut self.floor_range, sector.floor_height, first_floor.into_iter().chain(second_floor));
-        merge_range(&mut self.ceiling_range, sector.ceiling_height, first_ceiling.into_iter().chain(second_ceiling));
+        merge_range(
+            &mut self.floor_range,
+            sector.floor_height,
+            first_floor.into_iter().chain(second_floor),
+        );
+        merge_range(
+            &mut self.ceiling_range,
+            sector.ceiling_height,
+            first_ceiling.into_iter().chain(second_ceiling),
+        );
 
         if self.ceiling_range.is_some() && self.ceiling_id == ObjectId(0) {
             self.ceiling_id = *next_dynamic_object_id;
@@ -212,7 +243,8 @@ impl DynamicSectorInfo {
                 wait: effect_def.wait,
                 speed: effect_def.speed,
                 first_height_offset: from_wad_height(first_floor - sector.floor_height),
-                second_height_offset: second_floor.map(|f| from_wad_height(f - sector.floor_height)),
+                second_height_offset: second_floor
+                    .map(|f| from_wad_height(f - sector.floor_height)),
                 repeat,
             });
         }
@@ -222,7 +254,8 @@ impl DynamicSectorInfo {
                 wait: effect_def.wait,
                 speed: effect_def.speed,
                 first_height_offset: from_wad_height(first_ceiling - sector.ceiling_height),
-                second_height_offset: second_ceiling.map(|c| from_wad_height(c - sector.ceiling_height)),
+                second_height_offset: second_ceiling
+                    .map(|c| from_wad_height(c - sector.ceiling_height)),
                 repeat,
             });
         }
@@ -234,12 +267,15 @@ fn merge_range<I: IntoIterator<Item = WadCoord>>(
     current: WadCoord,
     with: I,
 ) {
-    *range = with.into_iter().fold(*range, |range, coord| {
-        Some(match range {
-            Some((min, max)) => (min.min(coord), max.max(coord)),
-            None => (coord, coord),
+    *range = with
+        .into_iter()
+        .fold(*range, |range, coord| {
+            Some(match range {
+                Some((min, max)) => (min.min(coord), max.max(coord)),
+                None => (coord, coord),
+            })
         })
-    }).map(|(min, max)| (min.min(current), max.max(current)));
+        .map(|(min, max)| (min.min(current), max.max(current)));
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -274,7 +310,10 @@ impl HeightEffectDef {
         heights: &NeighbourHeights,
     ) -> (Option<WadCoord>, Option<WadCoord>) {
         this.map_or((None, None), |def| {
-            (def.first.to_height(sector, heights), def.second.and_then(|d| d.to_height(sector, heights)))
+            (
+                def.first.to_height(sector, heights),
+                def.second.and_then(|d| d.to_height(sector, heights)),
+            )
         })
     }
 }
@@ -299,28 +338,52 @@ pub struct LevelAnalysis {
 
 impl LevelAnalysis {
     pub fn new(level: &Level, meta: &WadMetadata) -> Self {
-        let mut this = Self { dynamic_info: IndexMap::new(), triggers: Vec::new(), num_objects: 0 };
+        let mut this = Self {
+            dynamic_info: IndexMap::new(),
+            triggers: Vec::new(),
+            num_objects: 0,
+        };
         this.compute_dynamic_sectors(level, meta);
         this
     }
 
-    pub fn num_objects(&self) -> usize { self.num_objects }
-    pub fn take_triggers(&mut self) -> Vec<Trigger> { mem::take(&mut self.triggers) }
+    pub fn num_objects(&self) -> usize {
+        self.num_objects
+    }
+    pub fn take_triggers(&mut self) -> Vec<Trigger> {
+        mem::take(&mut self.triggers)
+    }
 
     fn compute_dynamic_sectors(&mut self, level: &Level, meta: &WadMetadata) {
         info!("Computing dynamic sectors...");
         let mut num_dynamic_linedefs = 0;
 
-        let mut sector_tags_and_ids: Vec<(u16, SectorId)> = level.sectors.iter().enumerate()
-            .filter_map(|(i, s)| if s.tag > 0 { Some((s.tag, i as SectorId)) } else { None })
+        let mut sector_tags_and_ids: Vec<(u16, SectorId)> = level
+            .sectors
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                if s.tag > 0 {
+                    Some((s.tag, i as SectorId))
+                } else {
+                    None
+                }
+            })
             .collect();
         sector_tags_and_ids.sort_unstable();
 
-        let max_tag = if let Some(&(t, _)) = sector_tags_and_ids.last() { t } else { return; };
+        let max_tag = if let Some(&(t, _)) = sector_tags_and_ids.last() {
+            t
+        } else {
+            return;
+        };
         let mut tag_to_first: Vec<Option<usize>> = vec![None; max_tag as usize + 1];
         let mut last_tag = !0u16;
         for (i, &(tag, _)) in sector_tags_and_ids.iter().enumerate() {
-            if tag != last_tag { tag_to_first[tag as usize] = Some(i); last_tag = tag; }
+            if tag != last_tag {
+                tag_to_first[tag as usize] = Some(i);
+                last_tag = tag;
+            }
         }
 
         let mut next_id = ObjectId(1);
@@ -336,7 +399,12 @@ impl LevelAnalysis {
                 if let Some(sidedef) = level.left_sidedef(linedef) {
                     let sid = sidedef.sector;
                     debug!("Sector {} zero-tag dynamic from linedef {}", sid, i_linedef);
-                    self.dynamic_info.entry(sid).or_default().update(&mut next_id, level, sid, &mut trigger);
+                    self.dynamic_info.entry(sid).or_default().update(
+                        &mut next_id,
+                        level,
+                        sid,
+                        &mut trigger,
+                    );
                 }
                 self.triggers.push(trigger);
                 continue;
@@ -344,9 +412,19 @@ impl LevelAnalysis {
 
             if let Some(&Some(first)) = tag_to_first.get(tag as usize) {
                 for &(ct, csid) in &sector_tags_and_ids[first..] {
-                    if ct != tag { break; }
-                    debug!("Sector {} tag {} dynamic from linedef {}", csid, tag, i_linedef);
-                    self.dynamic_info.entry(csid).or_default().update(&mut next_id, level, csid, &mut trigger);
+                    if ct != tag {
+                        break;
+                    }
+                    debug!(
+                        "Sector {} tag {} dynamic from linedef {}",
+                        csid, tag, i_linedef
+                    );
+                    self.dynamic_info.entry(csid).or_default().update(
+                        &mut next_id,
+                        level,
+                        csid,
+                        &mut trigger,
+                    );
                 }
             } else {
                 warn!("No sector with tag {} for linedef {}", tag, i_linedef);
@@ -354,28 +432,54 @@ impl LevelAnalysis {
             self.triggers.push(trigger);
         }
         self.num_objects = next_id.0 as usize;
-        info!("Dynamic sectors: {} objects, {} linedefs", self.num_objects, num_dynamic_linedefs);
+        info!(
+            "Dynamic sectors: {} objects, {} linedefs",
+            self.num_objects, num_dynamic_linedefs
+        );
     }
 
-    fn linedef_to_trigger(&self, level: &Level, meta: &WadMetadata, linedef: &WadLinedef) -> Option<Trigger> {
+    fn linedef_to_trigger(
+        &self,
+        level: &Level,
+        meta: &WadMetadata,
+        linedef: &WadLinedef,
+    ) -> Option<Trigger> {
         let special_type = linedef.special_type;
-        if special_type == 0 { return None; }
-        let line = match (level.vertex(linedef.start_vertex), level.vertex(linedef.end_vertex)) {
+        if special_type == 0 {
+            return None;
+        }
+        let line = match (
+            level.vertex(linedef.start_vertex),
+            level.vertex(linedef.end_vertex),
+        ) {
             (Some(s), Some(e)) => Line2::from_two_points(s, e),
-            _ => { error!("Missing vertices for linedef"); return None; }
+            _ => {
+                error!("Missing vertices for linedef");
+                return None;
+            }
         };
         Some(if let Some(meta) = meta.linedef.get(&special_type) {
             Trigger {
-                trigger_type: meta.trigger, only_once: meta.only_once,
-                move_effect_def: meta.move_effect, exit_effect: meta.exit_effect,
-                unimplemented: false, special_type, line, move_effects: Vec::new(),
+                trigger_type: meta.trigger,
+                only_once: meta.only_once,
+                move_effect_def: meta.move_effect,
+                exit_effect: meta.exit_effect,
+                unimplemented: false,
+                special_type,
+                line,
+                move_effects: Vec::new(),
             }
         } else {
             error!("Unknown linedef special type: {}", special_type);
             Trigger {
-                trigger_type: TriggerType::Any, only_once: false,
-                move_effect_def: None, exit_effect: None,
-                unimplemented: true, special_type, line, move_effects: Vec::new(),
+                trigger_type: TriggerType::Any,
+                only_once: false,
+                move_effect_def: None,
+                exit_effect: None,
+                unimplemented: true,
+                special_type,
+                line,
+                move_effects: Vec::new(),
             }
         })
     }
@@ -403,7 +507,10 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         visitor: &'a mut V,
     ) -> Self {
         Self {
-            level, tex, meta, visitor,
+            level,
+            tex,
+            meta,
+            visitor,
             height_range: min_max_height(level),
             bsp_lines: Vec::with_capacity(32),
             subsector_points: Vec::with_capacity(32),
@@ -416,7 +523,10 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
     pub fn walk(&mut self) {
         let root = match self.level.nodes.last() {
             Some(n) => n,
-            None => { warn!("Level contains no nodes"); return; }
+            None => {
+                warn!("Level contains no nodes");
+                return;
+            }
         };
         let partition = partition_line(root);
         self.visitor.visit_bsp_root(&partition);
@@ -426,23 +536,36 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
     }
 
     fn floor_id(&self, sector: &WadSector) -> ObjectId {
-        self.dynamic_info.get(&self.level.sector_id(sector)).map_or(ObjectId(0), |d| d.floor_id)
+        self.dynamic_info
+            .get(&self.level.sector_id(sector))
+            .map_or(ObjectId(0), |d| d.floor_id)
     }
 
     fn ceiling_id(&self, sector: &WadSector) -> ObjectId {
-        self.dynamic_info.get(&self.level.sector_id(sector)).map_or(ObjectId(0), |d| d.ceiling_id)
+        self.dynamic_info
+            .get(&self.level.sector_id(sector))
+            .map_or(ObjectId(0), |d| d.ceiling_id)
     }
 
     fn sector_info(&self, sector: &WadSector) -> SectorInfo {
         let fr = (sector.floor_height, sector.floor_height);
         let cr = (sector.ceiling_height, sector.ceiling_height);
-        self.dynamic_info.get(&self.level.sector_id(sector)).map_or_else(
-            || SectorInfo { floor_id: ObjectId(0), ceiling_id: ObjectId(0), floor_range: fr, ceiling_range: cr },
-            |d| SectorInfo {
-                floor_id: d.floor_id, ceiling_id: d.ceiling_id,
-                floor_range: d.floor_range.unwrap_or(fr), ceiling_range: d.ceiling_range.unwrap_or(cr),
-            },
-        )
+        self.dynamic_info
+            .get(&self.level.sector_id(sector))
+            .map_or_else(
+                || SectorInfo {
+                    floor_id: ObjectId(0),
+                    ceiling_id: ObjectId(0),
+                    floor_range: fr,
+                    ceiling_range: cr,
+                },
+                |d| SectorInfo {
+                    floor_id: d.floor_id,
+                    ceiling_id: d.ceiling_id,
+                    floor_range: d.floor_range.unwrap_or(fr),
+                    ceiling_range: d.ceiling_range.unwrap_or(cr),
+                },
+            )
     }
 
     fn node(&mut self, id: ChildId, branch: Branch) {
@@ -455,7 +578,10 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         }
         let node = match self.level.nodes.get(id) {
             Some(n) => n,
-            None => { warn!("Missing node {}", id); return; }
+            None => {
+                warn!("Missing node {}", id);
+                return;
+            }
         };
         let partition = partition_line(node);
         self.visitor.visit_bsp_node(&partition, branch);
@@ -474,14 +600,29 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
 
     fn subsector(&mut self, id: usize) {
         let subsector = match self.level.ssector(id) {
-            Some(s) => s, None => { warn!("Missing subsector {}", id); return; }
+            Some(s) => s,
+            None => {
+                warn!("Missing subsector {}", id);
+                return;
+            }
         };
         let segs = match self.level.ssector_segs(subsector) {
-            Some(s) => s, None => { warn!("Missing segs for subsector {}", id); return; }
+            Some(s) => s,
+            None => {
+                warn!("Missing segs for subsector {}", id);
+                return;
+            }
         };
-        if segs.is_empty() { warn!("Zero segs for subsector {}", id); return; }
+        if segs.is_empty() {
+            warn!("Zero segs for subsector {}", id);
+            return;
+        }
         let sector = match self.level.seg_sector(&segs[0]) {
-            Some(s) => s, None => { warn!("Missing sector for subsector {}", id); return; }
+            Some(s) => s,
+            None => {
+                warn!("Missing sector for subsector {}", id);
+                return;
+            }
         };
         let sector_info = self.sector_info(sector);
 
@@ -492,11 +633,16 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
 
         for seg in segs {
             let (v1, v2) = match self.level.seg_vertices(seg) {
-                Some(v) => v, None => { warn!("Missing seg vertices subsector {}", id); return; }
+                Some(v) => v,
+                None => {
+                    warn!("Missing seg vertices subsector {}", id);
+                    return;
+                }
             };
             self.subsector_points.push(v1);
             self.subsector_points.push(v2);
-            self.subsector_seg_lines.push(Line2::from_two_points(v1, v2));
+            self.subsector_seg_lines
+                .push(Line2::from_two_points(v1, v2));
             self.seg(sector, &sector_info, seg, (v1, v2));
         }
 
@@ -505,17 +651,29 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             let pts = &self.subsector_points[..seg_point_count];
             let mut mn = pts[0];
             let mut mx = pts[0];
-            for &p in &pts[1..] { mn = mn.min(p); mx = mx.max(p); }
+            for &p in &pts[1..] {
+                mn = mn.min(p);
+                mx = mx.max(p);
+            }
             (mn, mx)
-        } else { (Vec2::ZERO, Vec2::ZERO) };
+        } else {
+            (Vec2::ZERO, Vec2::ZERO)
+        };
 
         for i in 0..(self.bsp_lines.len().saturating_sub(1)) {
             for j in (i + 1)..self.bsp_lines.len() {
                 let point = match self.bsp_lines[i].intersect_point(&self.bsp_lines[j]) {
-                    Some(p) => p, None => continue,
+                    Some(p) => p,
+                    None => continue,
                 };
-                let inside_bsp = self.bsp_lines.iter().all(|l| l.signed_distance(point) >= -BSP_TOLERANCE);
-                let inside_seg = self.subsector_seg_lines.iter().all(|l| l.signed_distance(point) <= SEG_TOLERANCE);
+                let inside_bsp = self
+                    .bsp_lines
+                    .iter()
+                    .all(|l| l.signed_distance(point) >= -BSP_TOLERANCE);
+                let inside_seg = self
+                    .subsector_seg_lines
+                    .iter()
+                    .all(|l| l.signed_distance(point) <= SEG_TOLERANCE);
                 if inside_bsp && inside_seg {
                     self.subsector_points.push(point);
                 }
@@ -523,7 +681,11 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         }
 
         if self.subsector_points.len() < 3 {
-            warn!("Degenerate polygon {} ({} verts)", id, self.subsector_points.len());
+            warn!(
+                "Degenerate polygon {} ({} verts)",
+                id,
+                self.subsector_points.len()
+            );
         }
         points_to_polygon(&mut self.subsector_points);
 
@@ -539,7 +701,9 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             ];
             for bl in &self.bsp_lines {
                 poly = clip_polygon_to_halfplane(&poly, bl);
-                if poly.len() < 3 { break; }
+                if poly.len() < 3 {
+                    break;
+                }
             }
             if poly.len() >= 3 {
                 self.subsector_points = poly;
@@ -550,10 +714,12 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
 
     fn seg(&mut self, sector: &WadSector, info: &SectorInfo, seg: &WadSeg, vertices: (Vec2, Vec2)) {
         let line = match self.level.seg_linedef(seg) {
-            Some(l) => l, None => return,
+            Some(l) => l,
+            None => return,
         };
         let sidedef = match self.level.seg_sidedef(seg) {
-            Some(s) => s, None => return,
+            Some(s) => s,
+            None => return,
         };
         let (min, max) = (self.height_range.0, self.height_range.1);
         let (floor, ceiling) = (sector.floor_height, sector.ceiling_height);
@@ -561,15 +727,29 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         let back_sector = match self.level.seg_back_sector(seg) {
             None => {
                 self.wall_quad(InternalWallQuad {
-                    sector, seg, vertices,
-                    object_id: if unpeg_lower { info.floor_id } else { info.ceiling_id },
-                    height_range: if unpeg_lower { (floor, floor + info.max_height()) } else { (ceiling - info.max_height(), ceiling) },
+                    sector,
+                    seg,
+                    vertices,
+                    object_id: if unpeg_lower {
+                        info.floor_id
+                    } else {
+                        info.ceiling_id
+                    },
+                    height_range: if unpeg_lower {
+                        (floor, floor + info.max_height())
+                    } else {
+                        (ceiling - info.max_height(), ceiling)
+                    },
                     texture_name: sidedef.middle_texture,
                     peg: if unpeg_lower { Peg::Bottom } else { Peg::Top },
                     blocker: true,
                 });
-                if is_sky_flat(sector.ceiling_texture) { self.sky_quad(info.ceiling_id, vertices, (ceiling, max)); }
-                if is_sky_flat(sector.floor_texture) { self.sky_quad(info.floor_id, vertices, (min, floor)); }
+                if is_sky_flat(sector.ceiling_texture) {
+                    self.sky_quad(info.ceiling_id, vertices, (ceiling, max));
+                }
+                if is_sky_flat(sector.floor_texture) {
+                    self.sky_quad(info.floor_id, vertices, (min, floor));
+                }
                 return;
             }
             Some(s) => s,
@@ -587,20 +767,33 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         let unpeg_upper = line.upper_unpegged();
         let floor = if back_info.floor_range.1 > info.floor_range.0 {
             self.wall_quad(InternalWallQuad {
-                sector, seg, vertices,
+                sector,
+                seg,
+                vertices,
                 object_id: back_info.floor_id,
-                height_range: (back_floor - back_info.floor_range.1 + info.floor_range.0, back_floor),
+                height_range: (
+                    back_floor - back_info.floor_range.1 + info.floor_range.0,
+                    back_floor,
+                ),
                 texture_name: sidedef.lower_texture,
-                peg: if unpeg_lower { Peg::BottomLower } else { Peg::Top },
+                peg: if unpeg_lower {
+                    Peg::BottomLower
+                } else {
+                    Peg::Top
+                },
                 blocker: true,
             });
             back_floor
-        } else { floor };
+        } else {
+            floor
+        };
 
         let ceil = if back_ceiling < ceiling {
             if !is_sky_flat(back_sector.ceiling_texture) {
                 self.wall_quad(InternalWallQuad {
-                    sector, seg, vertices,
+                    sector,
+                    seg,
+                    vertices,
                     object_id: back_info.ceiling_id,
                     height_range: (back_ceiling, ceiling),
                     texture_name: sidedef.upper_texture,
@@ -609,25 +802,52 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
                 });
             }
             back_ceiling
-        } else { ceiling };
+        } else {
+            ceiling
+        };
 
         self.wall_quad(InternalWallQuad {
-            sector, seg, vertices,
-            object_id: if unpeg_lower { info.floor_id } else { info.ceiling_id },
+            sector,
+            seg,
+            vertices,
+            object_id: if unpeg_lower {
+                info.floor_id
+            } else {
+                info.ceiling_id
+            },
             height_range: (floor, ceil),
             texture_name: sidedef.middle_texture,
             peg: if unpeg_lower {
-                if is_untextured(sidedef.upper_texture) { Peg::TopFloat } else { Peg::Bottom }
+                if is_untextured(sidedef.upper_texture) {
+                    Peg::TopFloat
+                } else {
+                    Peg::Bottom
+                }
             } else {
-                if is_untextured(sidedef.lower_texture) { Peg::BottomFloat } else { Peg::Top }
+                if is_untextured(sidedef.lower_texture) {
+                    Peg::BottomFloat
+                } else {
+                    Peg::Top
+                }
             },
             blocker: line.impassable(),
         });
     }
 
     fn wall_quad(&mut self, quad: InternalWallQuad) {
-        let InternalWallQuad { object_id, sector, seg, vertices: (v1, v2), height_range: (low, high), texture_name, peg, blocker } = quad;
-        if low >= high { return; }
+        let InternalWallQuad {
+            object_id,
+            sector,
+            seg,
+            vertices: (v1, v2),
+            height_range: (low, high),
+            texture_name,
+            peg,
+            blocker,
+        } = quad;
+        if low >= high {
+            return;
+        }
         let size = if is_untextured(texture_name) {
             None
         } else if let Some(image) = self.tex.texture(texture_name) {
@@ -636,14 +856,26 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             warn!("wall_quad: No such wall texture '{}'", texture_name);
             return;
         };
-        let line = match self.level.seg_linedef(seg) { Some(l) => l, None => return };
-        let sidedef = match self.level.seg_sidedef(seg) { Some(s) => s, None => return };
+        let line = match self.level.seg_linedef(seg) {
+            Some(l) => l,
+            None => return,
+        };
+        let sidedef = match self.level.seg_sidedef(seg) {
+            Some(s) => s,
+            None => return,
+        };
         let dir = (v2 - v1).normalize_or_zero();
         let bias = dir * POLY_BIAS;
         let (v1, v2) = (v1 - bias, v2 + bias);
         let (low, high) = match (size, peg) {
-            (Some(sz), Peg::TopFloat) => (from_wad_height(low + sidedef.y_offset), from_wad_height(low + sz.y as i16 + sidedef.y_offset)),
-            (Some(sz), Peg::BottomFloat) => (from_wad_height(high + sidedef.y_offset - sz.y as i16), from_wad_height(high + sidedef.y_offset)),
+            (Some(sz), Peg::TopFloat) => (
+                from_wad_height(low + sidedef.y_offset),
+                from_wad_height(low + sz.y as i16 + sidedef.y_offset),
+            ),
+            (Some(sz), Peg::BottomFloat) => (
+                from_wad_height(high + sidedef.y_offset - sz.y as i16),
+                from_wad_height(high + sidedef.y_offset),
+            ),
             _ => (from_wad_height(low), from_wad_height(high)),
         };
 
@@ -653,8 +885,12 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
                 light::with_contrast(&li, Contrast::Brighten)
             } else if (v1.y - v2.y).abs() < EPSILON {
                 light::with_contrast(&li, Contrast::Darken)
-            } else { li }
-        } else { li };
+            } else {
+                li
+            }
+        } else {
+            li
+        };
 
         let height = to_wad_height(high - low);
         let s1 = f32::from(seg.offset) + f32::from(sidedef.x_offset);
@@ -668,14 +904,23 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             }
             (Some(sz), Peg::TopFloat) | (Some(sz), Peg::BottomFloat) => (sz.y, 0.0),
         };
-        let (t1, t2) = (t1 + f32::from(sidedef.y_offset), t2 + f32::from(sidedef.y_offset));
+        let (t1, t2) = (
+            t1 + f32::from(sidedef.y_offset),
+            t2 + f32::from(sidedef.y_offset),
+        );
         let scroll = if line.special_type == 0x30 { 35.0 } else { 0.0 };
         let (low, high) = (low - POLY_BIAS, high + POLY_BIAS);
 
         self.visitor.visit_wall_quad(&StaticQuad {
-            vertices: (v1, v2), tex_start: (s1, t1), tex_end: (s2, t2),
-            height_range: (low, high), light_info: &li,
-            tex_name: size.map(|_| texture_name), blocker, scroll, object_id,
+            vertices: (v1, v2),
+            tex_start: (s1, t1),
+            tex_end: (s2, t2),
+            height_range: (low, high),
+            light_info: &li,
+            tex_name: size.map(|_| texture_name),
+            blocker,
+            scroll,
+            object_id,
         });
     }
 
@@ -683,30 +928,66 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         let li = light_info(&mut self.light_cache, self.level, sector).clone();
         let (floor_tex, ceil_tex) = (sector.floor_texture, sector.ceiling_texture);
         let (floor_sky, ceil_sky) = (is_sky_flat(floor_tex), is_sky_flat(ceil_tex));
-        let floor_y = from_wad_height(if floor_sky { self.height_range.0 } else { sector.floor_height });
-        let ceil_y = from_wad_height(if ceil_sky { self.height_range.1 } else { sector.ceiling_height });
+        let floor_y = from_wad_height(if floor_sky {
+            self.height_range.0
+        } else {
+            sector.floor_height
+        });
+        let ceil_y = from_wad_height(if ceil_sky {
+            self.height_range.1
+        } else {
+            sector.ceiling_height
+        });
 
         if floor_sky {
-            self.visitor.visit_floor_sky_poly(&SkyPoly { object_id: info.floor_id, vertices: &self.subsector_points, height: floor_y });
+            self.visitor.visit_floor_sky_poly(&SkyPoly {
+                object_id: info.floor_id,
+                vertices: &self.subsector_points,
+                height: floor_y,
+            });
         } else {
-            self.visitor.visit_floor_poly(&StaticPoly { object_id: info.floor_id, vertices: &self.subsector_points, height: floor_y, light_info: &li, tex_name: floor_tex });
+            self.visitor.visit_floor_poly(&StaticPoly {
+                object_id: info.floor_id,
+                vertices: &self.subsector_points,
+                height: floor_y,
+                light_info: &li,
+                tex_name: floor_tex,
+            });
         }
         if ceil_sky {
-            self.visitor.visit_ceil_sky_poly(&SkyPoly { object_id: info.ceiling_id, vertices: &self.subsector_points, height: ceil_y });
+            self.visitor.visit_ceil_sky_poly(&SkyPoly {
+                object_id: info.ceiling_id,
+                vertices: &self.subsector_points,
+                height: ceil_y,
+            });
         } else {
-            self.visitor.visit_ceil_poly(&StaticPoly { object_id: info.ceiling_id, vertices: &self.subsector_points, height: ceil_y, light_info: &li, tex_name: ceil_tex });
+            self.visitor.visit_ceil_poly(&StaticPoly {
+                object_id: info.ceiling_id,
+                vertices: &self.subsector_points,
+                height: ceil_y,
+                light_info: &li,
+                tex_name: ceil_tex,
+            });
         }
     }
 
-    fn sky_quad(&mut self, object_id: ObjectId, (v1, v2): (Vec2, Vec2), (low, high): (WadCoord, WadCoord)) {
-        if low >= high { return; }
+    fn sky_quad(
+        &mut self,
+        object_id: ObjectId,
+        (v1, v2): (Vec2, Vec2),
+        (low, high): (WadCoord, WadCoord),
+    ) {
+        if low >= high {
+            return;
+        }
         let edge = (v2 - v1).normalize_or_zero();
         let bias = edge * POLY_BIAS * 16.0;
         let normal = Vec2::new(-edge.y, edge.x);
         let nbias = normal * POLY_BIAS * 16.0;
         let (v1, v2) = (v1 + nbias - bias, v2 + nbias + bias);
         self.visitor.visit_sky_quad(&SkyQuad {
-            object_id, vertices: (v1, v2),
+            object_id,
+            vertices: (v1, v2),
             height_range: (from_wad_height(low), from_wad_height(high)),
         });
     }
@@ -718,7 +999,8 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             if let Some(marker) = Marker::from(thing.thing_type) {
                 // Markers (player starts, teleports) don't need a valid sector —
                 // fall back to floor_height=0 if BSP lookup fails.
-                let floor_y = self.sector_at(pos)
+                let floor_y = self
+                    .sector_at(pos)
                     .map(|s| from_wad_height(s.floor_height))
                     .unwrap_or(0.0);
                 let p = [pos.x, floor_y, pos.y];
@@ -734,27 +1016,42 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         loop {
             let (id, is_leaf) = parse_child_id(child_id);
             if is_leaf {
-                let segs = self.level.ssector(id)
+                let segs = self
+                    .level
+                    .ssector(id)
                     .and_then(|ss| self.level.ssector_segs(ss))
                     .and_then(|s| if s.is_empty() { None } else { Some(s) });
                 let segs = segs?;
                 let sector = self.level.seg_sector(&segs[0])?;
-                return if segs.iter()
+                return if segs
+                    .iter()
                     .filter_map(|seg| self.level.seg_vertices(seg))
                     .map(|(v1, v2)| Line2::from_two_points(v1, v2))
                     .all(|line| line.signed_distance(pos) <= SEG_TOLERANCE)
-                { Some(sector) } else { None };
+                {
+                    Some(sector)
+                } else {
+                    None
+                };
             } else {
                 let node = self.level.nodes.get(id)?;
                 let partition = partition_line(node);
-                child_id = if partition.signed_distance(pos) > 0.0 { node.left } else { node.right };
+                child_id = if partition.signed_distance(pos) > 0.0 {
+                    node.left
+                } else {
+                    node.right
+                };
             }
         }
     }
 
     fn decor(&mut self, thing: &WadThing, pos: Vec2, sector: &WadSector) {
         let meta = match self.meta.find_thing(thing.thing_type) {
-            Some(m) => m, None => { warn!("No metadata for thing type {}", thing.thing_type); return; }
+            Some(m) => m,
+            None => {
+                warn!("No metadata for thing type {}", thing.thing_type);
+                return;
+            }
         };
         let (name, size) = {
             let mut sprite0 = meta.sprite;
@@ -764,25 +1061,47 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             let s1 = sprite1.push(b'1').ok().map(|_| sprite1);
             match (s0, s1) {
                 (Some(s0), Some(s1)) => {
-                    if let Some(img) = self.tex.texture(s0) { (s0, img.size()) }
-                    else if let Some(img) = self.tex.texture(s1) { (s1, img.size()) }
-                    else { warn!("No sprite {} for thing {}", meta.sprite, thing.thing_type); return; }
+                    if let Some(img) = self.tex.texture(s0) {
+                        (s0, img.size())
+                    } else if let Some(img) = self.tex.texture(s1) {
+                        (s1, img.size())
+                    } else {
+                        warn!("No sprite {} for thing {}", meta.sprite, thing.thing_type);
+                        return;
+                    }
                 }
-                _ => { warn!("Bad sprite name for thing {}", thing.thing_type); return; }
+                _ => {
+                    warn!("Bad sprite name for thing {}", thing.thing_type);
+                    return;
+                }
             }
         };
-        let sz = Vec2::new(from_wad_height(size[0] as i16), from_wad_height(size[1] as i16));
+        let sz = Vec2::new(
+            from_wad_height(size[0] as i16),
+            from_wad_height(size[1] as i16),
+        );
         let (object_id, low, high) = if meta.hanging {
-            (self.ceiling_id(sector),
-             [pos.x, from_wad_height(sector.ceiling_height) - sz.y, pos.y],
-             [pos.x, from_wad_height(sector.ceiling_height), pos.y])
+            (
+                self.ceiling_id(sector),
+                [pos.x, from_wad_height(sector.ceiling_height) - sz.y, pos.y],
+                [pos.x, from_wad_height(sector.ceiling_height), pos.y],
+            )
         } else {
-            (self.floor_id(sector),
-             [pos.x, from_wad_height(sector.floor_height), pos.y],
-             [pos.x, from_wad_height(sector.floor_height) + sz.y, pos.y])
+            (
+                self.floor_id(sector),
+                [pos.x, from_wad_height(sector.floor_height), pos.y],
+                [pos.x, from_wad_height(sector.floor_height) + sz.y, pos.y],
+            )
         };
         let li = light_info(&mut self.light_cache, self.level, sector).clone();
-        self.visitor.visit_decor(&Decor { object_id, low, high, half_width: sz.x * 0.5, light_info: &li, tex_name: name });
+        self.visitor.visit_decor(&Decor {
+            object_id,
+            low,
+            high,
+            half_width: sz.x * 0.5,
+            light_info: &li,
+            tex_name: name,
+        });
     }
 }
 
@@ -811,7 +1130,9 @@ const SEG_TOLERANCE: f32 = 0.1;
 const POLY_BIAS: f32 = 0.64 * 3e-4;
 
 fn clip_polygon_to_halfplane(polygon: &[Vec2], line: &Line2) -> Vec<Vec2> {
-    if polygon.is_empty() { return Vec::new(); }
+    if polygon.is_empty() {
+        return Vec::new();
+    }
     let mut out = Vec::with_capacity(polygon.len() + 1);
     let n = polygon.len();
     for i in 0..n {
@@ -833,12 +1154,22 @@ fn clip_polygon_to_halfplane(polygon: &[Vec2], line: &Line2) -> Vec<Vec2> {
 }
 
 #[derive(Copy, Clone)]
-enum Peg { Top, Bottom, BottomLower, TopFloat, BottomFloat }
+enum Peg {
+    Top,
+    Bottom,
+    BottomLower,
+    TopFloat,
+    BottomFloat,
+}
 
 fn min_max_height(level: &Level) -> (WadCoord, WadCoord) {
-    let (min, max) = level.sectors.iter()
+    let (min, max) = level
+        .sectors
+        .iter()
         .map(|s| (s.floor_height, s.ceiling_height))
-        .fold((32_767i16, -32_768i16), |(mn, mx), (f, c)| (mn.min(f), mx.max(c)));
+        .fold((32_767i16, -32_768i16), |(mn, mx), (f, c)| {
+            (mn.min(f), mx.max(c))
+        });
     (min - 512, max + 512)
 }
 
@@ -852,22 +1183,43 @@ fn points_to_polygon(points: &mut Vec<Vec2>) {
     points.sort_unstable_by(|a, b| {
         let ac = *a - center;
         let bc = *b - center;
-        if ac.x >= 0.0 && bc.x < 0.0 { return Ordering::Less; }
-        if ac.x < 0.0 && bc.x >= 0.0 { return Ordering::Greater; }
+        if ac.x >= 0.0 && bc.x < 0.0 {
+            return Ordering::Less;
+        }
+        if ac.x < 0.0 && bc.x >= 0.0 {
+            return Ordering::Greater;
+        }
         if ac.x == 0.0 && bc.x == 0.0 {
             return if ac.y >= 0.0 || bc.y >= 0.0 {
-                if a.y > b.y { Ordering::Less } else { Ordering::Greater }
+                if a.y > b.y {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
             } else {
-                if b.y > a.y { Ordering::Less } else { Ordering::Greater }
+                if b.y > a.y {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
             };
         }
-        if ac.perp_dot(bc) < 0.0 { Ordering::Less } else { Ordering::Greater }
+        if ac.perp_dot(bc) < 0.0 {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }
     });
 
     let mut simplified = Vec::with_capacity(points.len());
-    if points.is_empty() { return; }
+    if points.is_empty() {
+        return;
+    }
     simplified.push(points[0]);
-    if points.len() < 3 { points.clear(); return; }
+    if points.len() < 3 {
+        points.clear();
+        return;
+    }
     let mut current = points[1];
     let mut area = 0.0f32;
     for i in 2..points.len() {
@@ -875,13 +1227,20 @@ fn points_to_polygon(points: &mut Vec<Vec2>) {
         let prev = simplified[simplified.len() - 1];
         let new_area = (next - current).perp_dot(current - prev) * 0.5;
         if new_area >= 0.0 {
-            if area + new_area > 1.024e-5 { area = 0.0; simplified.push(current); }
-            else { area += new_area; }
+            if area + new_area > 1.024e-5 {
+                area = 0.0;
+                simplified.push(current);
+            } else {
+                area += new_area;
+            }
         }
         current = next;
     }
     simplified.push(points[points.len() - 1]);
-    if simplified.len() < 3 { points.clear(); return; }
+    if simplified.len() < 3 {
+        points.clear();
+        return;
+    }
     while (simplified[0] - simplified[simplified.len() - 1]).length() < 0.0032 {
         simplified.pop();
     }
@@ -898,19 +1257,58 @@ pub struct VisitorChain<'a, 'b, A: LevelVisitor + 'a, B: LevelVisitor + 'b> {
 }
 
 impl<'a, 'b, A: LevelVisitor, B: LevelVisitor> LevelVisitor for VisitorChain<'a, 'b, A, B> {
-    fn visit_wall_quad(&mut self, q: &StaticQuad) { self.first.visit_wall_quad(q); self.second.visit_wall_quad(q); }
-    fn visit_floor_poly(&mut self, p: &StaticPoly) { self.first.visit_floor_poly(p); self.second.visit_floor_poly(p); }
-    fn visit_ceil_poly(&mut self, p: &StaticPoly) { self.first.visit_ceil_poly(p); self.second.visit_ceil_poly(p); }
-    fn visit_floor_sky_poly(&mut self, p: &SkyPoly) { self.first.visit_floor_sky_poly(p); self.second.visit_floor_sky_poly(p); }
-    fn visit_ceil_sky_poly(&mut self, p: &SkyPoly) { self.first.visit_ceil_sky_poly(p); self.second.visit_ceil_sky_poly(p); }
-    fn visit_sky_quad(&mut self, q: &SkyQuad) { self.first.visit_sky_quad(q); self.second.visit_sky_quad(q); }
-    fn visit_marker(&mut self, p: [f32; 3], y: f32, m: Marker) { self.first.visit_marker(p, y, m); self.second.visit_marker(p, y, m); }
-    fn visit_decor(&mut self, d: &Decor) { self.first.visit_decor(d); self.second.visit_decor(d); }
-    fn visit_bsp_root(&mut self, l: &Line2) { self.first.visit_bsp_root(l); self.second.visit_bsp_root(l); }
-    fn visit_bsp_node(&mut self, l: &Line2, b: Branch) { self.first.visit_bsp_node(l, b); self.second.visit_bsp_node(l, b); }
-    fn visit_bsp_leaf(&mut self, b: Branch) { self.first.visit_bsp_leaf(b); self.second.visit_bsp_leaf(b); }
-    fn visit_bsp_leaf_end(&mut self) { self.first.visit_bsp_leaf_end(); self.second.visit_bsp_leaf_end(); }
-    fn visit_bsp_node_end(&mut self) { self.first.visit_bsp_node_end(); self.second.visit_bsp_node_end(); }
+    fn visit_wall_quad(&mut self, q: &StaticQuad) {
+        self.first.visit_wall_quad(q);
+        self.second.visit_wall_quad(q);
+    }
+    fn visit_floor_poly(&mut self, p: &StaticPoly) {
+        self.first.visit_floor_poly(p);
+        self.second.visit_floor_poly(p);
+    }
+    fn visit_ceil_poly(&mut self, p: &StaticPoly) {
+        self.first.visit_ceil_poly(p);
+        self.second.visit_ceil_poly(p);
+    }
+    fn visit_floor_sky_poly(&mut self, p: &SkyPoly) {
+        self.first.visit_floor_sky_poly(p);
+        self.second.visit_floor_sky_poly(p);
+    }
+    fn visit_ceil_sky_poly(&mut self, p: &SkyPoly) {
+        self.first.visit_ceil_sky_poly(p);
+        self.second.visit_ceil_sky_poly(p);
+    }
+    fn visit_sky_quad(&mut self, q: &SkyQuad) {
+        self.first.visit_sky_quad(q);
+        self.second.visit_sky_quad(q);
+    }
+    fn visit_marker(&mut self, p: [f32; 3], y: f32, m: Marker) {
+        self.first.visit_marker(p, y, m);
+        self.second.visit_marker(p, y, m);
+    }
+    fn visit_decor(&mut self, d: &Decor) {
+        self.first.visit_decor(d);
+        self.second.visit_decor(d);
+    }
+    fn visit_bsp_root(&mut self, l: &Line2) {
+        self.first.visit_bsp_root(l);
+        self.second.visit_bsp_root(l);
+    }
+    fn visit_bsp_node(&mut self, l: &Line2, b: Branch) {
+        self.first.visit_bsp_node(l, b);
+        self.second.visit_bsp_node(l, b);
+    }
+    fn visit_bsp_leaf(&mut self, b: Branch) {
+        self.first.visit_bsp_leaf(b);
+        self.second.visit_bsp_leaf(b);
+    }
+    fn visit_bsp_leaf_end(&mut self) {
+        self.first.visit_bsp_leaf_end();
+        self.second.visit_bsp_leaf_end();
+    }
+    fn visit_bsp_node_end(&mut self) {
+        self.first.visit_bsp_node_end();
+        self.second.visit_bsp_node_end();
+    }
 }
 
 #[derive(Copy, Clone)]

@@ -161,7 +161,10 @@ impl WadMetadata {
             .find(|sky| sky.level_pattern.is_match(name.as_ref()))
             .or_else(|| {
                 if let Some(sky) = self.sky.first() {
-                    warn!("No sky found for level {}, using {}.", name, sky.texture_name);
+                    warn!(
+                        "No sky found for level {}, using {}.",
+                        name, sky.texture_name
+                    );
                     Some(sky)
                 } else {
                     error!("No sky metadata provided.");
@@ -172,7 +175,10 @@ impl WadMetadata {
 
     pub fn find_thing(&self, thing_type: ThingType) -> Option<&ThingMetadata> {
         let things = &self.things;
-        things.decorations.iter().find(|t| t.thing_type == thing_type)
+        things
+            .decorations
+            .iter()
+            .find(|t| t.thing_type == thing_type)
             .or_else(|| things.weapons.iter().find(|t| t.thing_type == thing_type))
             .or_else(|| things.powerups.iter().find(|t| t.thing_type == thing_type))
             .or_else(|| things.artifacts.iter().find(|t| t.thing_type == thing_type))
@@ -183,34 +189,53 @@ impl WadMetadata {
 }
 
 fn deserialize_regex_from_str<'de, D>(deserializer: D) -> StdResult<Regex, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let s: String = Deserialize::deserialize(deserializer)?;
     Regex::new(&s).map_err(D::Error::custom)
 }
 
 fn deserialize_name_from_str<'de, D>(deserializer: D) -> StdResult<WadName, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let s: String = String::deserialize(deserializer)?;
     WadName::from_str(&s).map_err(D::Error::custom)
 }
 
 fn deserialize_move_speed<'de, D>(deserializer: D) -> StdResult<f32, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     Ok(f32::deserialize(deserializer)? / 8.0 * 0.7)
 }
 
-fn deserialize_name_from_vec_vec_str<'de, D>(deserializer: D) -> StdResult<Vec<Vec<WadName>>, D::Error>
-where D: Deserializer<'de> {
+fn deserialize_name_from_vec_vec_str<'de, D>(
+    deserializer: D,
+) -> StdResult<Vec<Vec<WadName>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let strings: Vec<Vec<String>> = Deserialize::deserialize(deserializer)?;
     strings
         .iter()
-        .map(|inner| inner.iter().map(|s| WadName::from_str(s)).collect::<Result<Vec<_>>>())
+        .map(|inner| {
+            inner
+                .iter()
+                .map(|s| WadName::from_str(s))
+                .collect::<Result<Vec<_>>>()
+        })
         .collect::<Result<Vec<Vec<_>>>>()
         .map_err(D::Error::custom)
 }
 
-fn deserialize_linedefs<'de, D>(deserializer: D) -> StdResult<IndexMap<SpecialType, LinedefMetadata>, D::Error>
-where D: Deserializer<'de> {
+fn deserialize_linedefs<'de, D>(
+    deserializer: D,
+) -> StdResult<IndexMap<SpecialType, LinedefMetadata>, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let linedefs = <Vec<LinedefMetadata>>::deserialize(deserializer)?;
     Ok(linedefs.into_iter().map(|l| (l.special_type, l)).collect())
 }

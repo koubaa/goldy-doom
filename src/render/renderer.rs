@@ -4,13 +4,13 @@ use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use goldy::types::{
-    AddressMode, CompareFunction, BufferKind, DepthFormat, DepthStencilState, FilterMode,
+    AddressMode, BufferKind, CompareFunction, DepthFormat, DepthStencilState, FilterMode,
     IndexFormat, ResourceAccess, SamplerDesc, TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    CommandEncoder, Device, Instance, LayoutCheckable, MosaicSlot, Parcel,
-    RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, ShaderLibrary, ShaderModule,
-    StructuredBufferElement, Context as GpuContext, Surface,
+    CommandEncoder, Context as GpuContext, Device, Instance, LayoutCheckable, MosaicSlot,
+    NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RenderTarget, RetainedPool, Sampler,
+    ShaderLibrary, ShaderModule, StructuredBufferElement, Surface, TaskGraph,
 };
 use std::sync::Arc;
 use winit::window::Window;
@@ -79,6 +79,9 @@ pub struct Renderer {
 
     level: Option<LevelGpuResources>,
     retained_pool: RetainedPool,
+
+    scene_rt: Option<RenderTarget>,
+    frame_graph: TaskGraph,
 }
 
 impl Renderer {
@@ -146,6 +149,8 @@ impl Renderer {
             light_buf,
             level: None,
             retained_pool,
+            scene_rt: None,
+            frame_graph: TaskGraph::new(),
         })
     }
 
@@ -155,15 +160,20 @@ impl Renderer {
             .device
             .create_context()
             .context("Failed to create submission context")?;
-        let surface = Surface::new_with_depth(
-            &context,
-            window,
-            Some(DepthFormat::Depth24Plus),
-        )
-        .context("Failed to create surface")?;
+        let surface = Surface::new(&context, window).context("Failed to create surface")?;
         self.context = Some(context);
         let target_format = surface.format();
         surface.validate_pipeline_format(target_format)?;
+
+        let (width, height) = surface.size();
+        let scene_rt = RenderTarget::new_with_depth(
+            &self.device,
+            width.max(1),
+            height.max(1),
+            target_format,
+            Some(DepthFormat::Depth24Plus),
+        )
+        .context("Failed to create offscreen scene render target")?;
 
         // Register doom_common as a shader library so import doom_common resolves via the library system
         let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -171,8 +181,7 @@ impl Renderer {
             .join("shaders");
         let doom_common_src = std::fs::read_to_string(shader_dir.join("doom_common.slang"))
             .context("Failed to read doom_common.slang")?;
-        let doom_common_lib =
-            ShaderLibrary::from_source("doom_common", &doom_common_src);
+        let doom_common_lib = ShaderLibrary::from_source("doom_common", &doom_common_src);
         self.device
             .register_library(doom_common_lib)
             .context("Failed to register doom_common shader library")?;
@@ -255,11 +264,15 @@ impl Renderer {
         .context("Failed to create sprite pipeline")?;
 
         self.surface = Some(surface);
+        self.scene_rt = Some(scene_rt);
         self.static_pipeline = Some(static_pipeline);
         self.sky_pipeline = Some(sky_pipeline);
         self.sprite_pipeline = Some(sprite_pipeline);
 
-        log::info!("Renderer: surface + pipelines initialized (format: {:?})", target_format);
+        log::info!(
+            "Renderer: surface + pipelines initialized (format: {:?})",
+            target_format
+        );
         Ok(())
     }
 
@@ -369,9 +382,12 @@ impl Renderer {
         );
         log::info!(
             "  wall atlas: {}x{}, flat atlas: {}x{}, palette: 256x{}",
-            wall_w, wall_h, flat_w, flat_h, palette_h,
+            wall_w,
+            wall_h,
+            flat_w,
+            flat_h,
+            palette_h,
         );
-
 
         self.level = Some(LevelGpuResources {
             geometry,
@@ -422,20 +438,53 @@ impl Renderer {
             time,
             tiled_band_size: level.tiled_band_size,
         };
-        // In-place retained recycle: overwrite the same allocation each frame.
-        self.scene_buf.copy_into(&[uniforms])?;
+        let scene_rt = self
+            .scene_rt
+            .as_ref()
+            .context("scene render target not initialized")?;
 
+        self.frame_graph.clear();
+        self.frame_graph.write_parcel(
+            &self.scene_buf,
+            0,
+            bytemuck::bytes_of(&uniforms).to_vec(),
+        )?;
         if light_levels.len() >= 256 {
-            self.light_buf.copy_into(&light_levels[..256])?;
+            self.frame_graph.write_parcel(
+                &self.light_buf,
+                0,
+                bytemuck::cast_slice(&light_levels[..256]).to_vec(),
+            )?;
         }
 
-        let scene_idx = self.scene_buf.resource_index(ResourceAccess::Read).unwrap_or(0);
-        let light_idx = self.light_buf.resource_index(ResourceAccess::Read).unwrap_or(0);
-        let wall_idx = level.wall_atlas.resource_index(ResourceAccess::Read).unwrap_or(0);
-        let flat_idx = level.flat_atlas.resource_index(ResourceAccess::Read).unwrap_or(0);
-        let palette_idx = level.palette.resource_index(ResourceAccess::Read).unwrap_or(0);
-        let sky_idx = level.sky_texture.resource_index(ResourceAccess::Read).unwrap_or(0);
-        let sampler_idx = self.sampler.resource_index(ResourceAccess::Read).unwrap_or(0);
+        let scene_idx = self
+            .scene_buf
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
+        let light_idx = self
+            .light_buf
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
+        let wall_idx = level
+            .wall_atlas
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
+        let flat_idx = level
+            .flat_atlas
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
+        let palette_idx = level
+            .palette
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
+        let sky_idx = level
+            .sky_texture
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
+        let sampler_idx = self
+            .sampler
+            .resource_index(ResourceAccess::Read)
+            .unwrap_or(0);
 
         let push_constants = [
             scene_idx,
@@ -446,8 +495,6 @@ impl Renderer {
             sky_idx,
             sampler_idx,
         ];
-
-        let frame = surface.acquire()?;
 
         let mut encoder = CommandEncoder::new();
         {
@@ -485,35 +532,45 @@ impl Renderer {
             }
         }
 
-        frame.render(encoder)?;
-        let submit_tv = surface.present(frame)?;
+        self.frame_graph
+            .render_pass("doom", scene_rt)
+            .bind_parcel(&self.scene_buf, NodeAccess::Read)
+            .bind_parcel(&self.light_buf, NodeAccess::Read)
+            .bind_parcel(&level.geometry, NodeAccess::Read)
+            .bind_parcel(&level.wall_atlas, NodeAccess::Read)
+            .bind_parcel(&level.flat_atlas, NodeAccess::Read)
+            .bind_parcel(&level.palette, NodeAccess::Read)
+            .bind_parcel(&level.sky_texture, NodeAccess::Read)
+            .finish_encoder(encoder);
 
-        //TODO - stop using CommandEncoder and use the TaskGraph.
+        let swapchain = self.frame_graph.declare_swapchain_output();
+        self.frame_graph
+            .copy_render_target_to_swapchain(scene_rt, swapchain);
 
-        // Renew the reuse gate: record the timeline that just referenced these parcels so the
-        // next frame's copy_into waits for this frame's GPU reads to retire.
-        let ctx = self.context.as_ref().expect("context");
-        ctx.stamp_parcel(&self.scene_buf, submit_tv);
-        ctx.stamp_parcel(&self.light_buf, submit_tv);
-
-        if let Some(level) = self.level.as_mut() {
-            // TODO(no-command-encoder): manual stamp only because doom submits via CommandEncoder,
-            // which bypasses the task graph. Once rendering goes through parcel-aware graph submits
-            // the runtime stamps last_referenced automatically.
-            // See docu/development/projects/diwan/no-command-encoder/project.md
-            ctx.stamp_parcel(&level.geometry, submit_tv);
-            ctx.stamp_parcel(&level.wall_atlas, submit_tv);
-            ctx.stamp_parcel(&level.flat_atlas, submit_tv);
-            ctx.stamp_parcel(&level.palette, submit_tv);
-            ctx.stamp_parcel(&level.sky_texture, submit_tv);
-        }
+        let frame = surface.begin()?;
+        let frame = surface.submit_graph_to_frame(&mut self.frame_graph, frame)?;
+        frame.present()?;
 
         Ok(())
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
         if let Some(surface) = &mut self.surface {
             let _ = surface.resize(width, height);
+            let format = surface.format();
+            match RenderTarget::new_with_depth(
+                &self.device,
+                width,
+                height,
+                format,
+                Some(DepthFormat::Depth24Plus),
+            ) {
+                Ok(rt) => self.scene_rt = Some(rt),
+                Err(e) => log::error!("Failed to resize scene render target: {e}"),
+            }
         }
     }
 

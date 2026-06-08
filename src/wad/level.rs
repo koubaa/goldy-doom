@@ -33,14 +33,28 @@ impl Level {
         let lump = wad.level_lump(index)?;
         info!("Reading level data for '{}'...", lump.name());
         let start_index = lump.index();
-        let things = wad.lump_by_index(start_index + THINGS_OFFSET)?.decode_vec()?;
-        let linedefs = wad.lump_by_index(start_index + LINEDEFS_OFFSET)?.decode_vec()?;
-        let vertices = wad.lump_by_index(start_index + VERTICES_OFFSET)?.decode_vec()?;
+        let things = wad
+            .lump_by_index(start_index + THINGS_OFFSET)?
+            .decode_vec()?;
+        let linedefs = wad
+            .lump_by_index(start_index + LINEDEFS_OFFSET)?
+            .decode_vec()?;
+        let vertices = wad
+            .lump_by_index(start_index + VERTICES_OFFSET)?
+            .decode_vec()?;
         let segs = wad.lump_by_index(start_index + SEGS_OFFSET)?.decode_vec()?;
-        let subsectors = wad.lump_by_index(start_index + SSECTORS_OFFSET)?.decode_vec()?;
-        let nodes = wad.lump_by_index(start_index + NODES_OFFSET)?.decode_vec()?;
-        let sidedefs = wad.lump_by_index(start_index + SIDEDEFS_OFFSET)?.decode_vec()?;
-        let sectors = wad.lump_by_index(start_index + SECTORS_OFFSET)?.decode_vec()?;
+        let subsectors = wad
+            .lump_by_index(start_index + SSECTORS_OFFSET)?
+            .decode_vec()?;
+        let nodes = wad
+            .lump_by_index(start_index + NODES_OFFSET)?
+            .decode_vec()?;
+        let sidedefs = wad
+            .lump_by_index(start_index + SIDEDEFS_OFFSET)?
+            .decode_vec()?;
+        let sectors = wad
+            .lump_by_index(start_index + SECTORS_OFFSET)?
+            .decode_vec()?;
 
         info!("Loaded level '{}':", lump.name());
         info!("    {:4} things", things.len());
@@ -53,7 +67,14 @@ impl Level {
         info!("    {:4} sectors", sectors.len());
 
         Ok(Level {
-            things, linedefs, sidedefs, vertices, segs, subsectors, nodes, sectors,
+            things,
+            linedefs,
+            sidedefs,
+            vertices,
+            segs,
+            subsectors,
+            nodes,
+            sectors,
         })
     }
 
@@ -150,7 +171,10 @@ impl Level {
             .fold(of.light, cmp::min)
     }
 
-    pub fn adjacent_sectors<'a>(&'a self, sector: &WadSector) -> impl Iterator<Item = &'a WadSector> {
+    pub fn adjacent_sectors<'a>(
+        &'a self,
+        sector: &WadSector,
+    ) -> impl Iterator<Item = &'a WadSector> {
         let sector_id = self.sector_id(sector);
         self.linedefs.iter().filter_map(move |line| {
             let left = match self.left_sidedef(line) {

@@ -74,15 +74,22 @@ impl LevelBuilder {
     pub fn finish(self) -> LevelMeshData {
         log::info!(
             "Level mesh: {} wall quads, {} floor polys, {} ceil polys, {} decors",
-            self.num_wall_quads, self.num_floor_polys, self.num_ceil_polys, self.num_decors,
+            self.num_wall_quads,
+            self.num_floor_polys,
+            self.num_ceil_polys,
+            self.num_decors,
         );
         log::info!(
             "  static verts={}, sky verts={}, sprite verts={}",
-            self.static_vertices.len(), self.sky_vertices.len(), self.decor_vertices.len(),
+            self.static_vertices.len(),
+            self.sky_vertices.len(),
+            self.decor_vertices.len(),
         );
         log::info!(
             "  static idx={}, sky idx={}, decor idx={}",
-            self.static_indices.len(), self.sky_indices.len(), self.decor_indices.len(),
+            self.static_indices.len(),
+            self.sky_indices.len(),
+            self.decor_indices.len(),
         );
         LevelMeshData {
             static_vertices: self.static_vertices,
@@ -104,35 +111,40 @@ impl LevelBuilder {
     fn push_static_quad(&mut self) {
         let n = self.static_vertices.len() as u32;
         let v0 = n - 4;
-        self.static_indices.extend_from_slice(&[v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3]);
+        self.static_indices
+            .extend_from_slice(&[v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3]);
     }
 
     fn push_static_poly(&mut self, poly_len: usize) {
         let n = self.static_vertices.len() as u32;
         let v0 = n - poly_len as u32;
         for i in 1..(poly_len as u32 - 1) {
-            self.static_indices.extend_from_slice(&[v0, v0 + i, v0 + i + 1]);
+            self.static_indices
+                .extend_from_slice(&[v0, v0 + i, v0 + i + 1]);
         }
     }
 
     fn push_sky_quad(&mut self) {
         let n = self.sky_vertices.len() as u32;
         let v0 = n - 4;
-        self.sky_indices.extend_from_slice(&[v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3]);
+        self.sky_indices
+            .extend_from_slice(&[v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3]);
     }
 
     fn push_sky_poly(&mut self, poly_len: usize) {
         let n = self.sky_vertices.len() as u32;
         let v0 = n - poly_len as u32;
         for i in 1..(poly_len as u32 - 1) {
-            self.sky_indices.extend_from_slice(&[v0, v0 + i, v0 + i + 1]);
+            self.sky_indices
+                .extend_from_slice(&[v0, v0 + i, v0 + i + 1]);
         }
     }
 
     fn push_decor_quad(&mut self) {
         let n = self.decor_vertices.len() as u32;
         let v0 = n - 4;
-        self.decor_indices.extend_from_slice(&[v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3]);
+        self.decor_indices
+            .extend_from_slice(&[v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3]);
     }
 }
 
@@ -145,7 +157,10 @@ impl LevelVisitor for LevelBuilder {
         };
         let bounds = match self.wall_bounds.get(&tex_name) {
             Some(b) => *b,
-            None => { warn!("No wall texture {}", tex_name); return; }
+            None => {
+                warn!("No wall texture {}", tex_name);
+                return;
+            }
         };
         let light = self.add_light_info(quad.light_info) as u32;
         let (v1, v2) = quad.vertices;
@@ -177,7 +192,8 @@ impl LevelVisitor for LevelBuilder {
         let bounds = match self.flat_bounds.get(&poly.tex_name) {
             Some(b) => *b,
             None => {
-                warn!("No floor texture {}", poly.tex_name); return;
+                warn!("No floor texture {}", poly.tex_name);
+                return;
             }
         };
         let light = self.add_light_info(poly.light_info) as u32;
@@ -202,7 +218,8 @@ impl LevelVisitor for LevelBuilder {
         let bounds = match self.flat_bounds.get(&poly.tex_name) {
             Some(b) => *b,
             None => {
-                warn!("No ceiling texture {}", poly.tex_name); return;
+                warn!("No ceiling texture {}", poly.tex_name);
+                return;
             }
         };
         let light = self.add_light_info(poly.light_info) as u32;
@@ -224,14 +241,20 @@ impl LevelVisitor for LevelBuilder {
 
     fn visit_floor_sky_poly(&mut self, poly: &SkyPoly) {
         for &v in poly.vertices {
-            self.sky_vertices.push(SkyVertex { pos: [v.x, poly.height, v.y], _pad: 0.0 });
+            self.sky_vertices.push(SkyVertex {
+                pos: [v.x, poly.height, v.y],
+                _pad: 0.0,
+            });
         }
         self.push_sky_poly(poly.vertices.len());
     }
 
     fn visit_ceil_sky_poly(&mut self, poly: &SkyPoly) {
         for &v in poly.vertices.iter().rev() {
-            self.sky_vertices.push(SkyVertex { pos: [v.x, poly.height, v.y], _pad: 0.0 });
+            self.sky_vertices.push(SkyVertex {
+                pos: [v.x, poly.height, v.y],
+                _pad: 0.0,
+            });
         }
         self.push_sky_poly(poly.vertices.len());
     }
@@ -239,10 +262,22 @@ impl LevelVisitor for LevelBuilder {
     fn visit_sky_quad(&mut self, quad: &SkyQuad) {
         let (v1, v2) = quad.vertices;
         let (low, high) = quad.height_range;
-        self.sky_vertices.push(SkyVertex { pos: [v1.x, low, v1.y], _pad: 0.0 });
-        self.sky_vertices.push(SkyVertex { pos: [v2.x, low, v2.y], _pad: 0.0 });
-        self.sky_vertices.push(SkyVertex { pos: [v2.x, high, v2.y], _pad: 0.0 });
-        self.sky_vertices.push(SkyVertex { pos: [v1.x, high, v1.y], _pad: 0.0 });
+        self.sky_vertices.push(SkyVertex {
+            pos: [v1.x, low, v1.y],
+            _pad: 0.0,
+        });
+        self.sky_vertices.push(SkyVertex {
+            pos: [v2.x, low, v2.y],
+            _pad: 0.0,
+        });
+        self.sky_vertices.push(SkyVertex {
+            pos: [v2.x, high, v2.y],
+            _pad: 0.0,
+        });
+        self.sky_vertices.push(SkyVertex {
+            pos: [v1.x, high, v1.y],
+            _pad: 0.0,
+        });
         self.push_sky_quad();
     }
 
@@ -258,17 +293,28 @@ impl LevelVisitor for LevelBuilder {
         let light = self.add_light_info(decor.light_info) as u32;
         let bounds = match self.decor_bounds.get(&decor.tex_name) {
             Some(b) => *b,
-            None => { warn!("No decor texture {}", decor.tex_name); return; }
+            None => {
+                warn!("No decor texture {}", decor.tex_name);
+                return;
+            }
         };
         let hw = decor.half_width;
         let mk = |p: [f32; 3], lx: f32, u: f32, v: f32| SpriteVertex {
-            pos: p, local_x: lx,
-            atlas_uv: bounds.pos, tile_uv: [u, v], tile_size: bounds.size,
-            num_frames: 1, light, _pad: 0,
+            pos: p,
+            local_x: lx,
+            atlas_uv: bounds.pos,
+            tile_uv: [u, v],
+            tile_size: bounds.size,
+            num_frames: 1,
+            light,
+            _pad: 0,
         };
-        self.decor_vertices.push(mk(decor.low, -hw, 0.0, bounds.size[1]));
-        self.decor_vertices.push(mk(decor.low, hw, bounds.size[0], bounds.size[1]));
-        self.decor_vertices.push(mk(decor.high, hw, bounds.size[0], 0.0));
+        self.decor_vertices
+            .push(mk(decor.low, -hw, 0.0, bounds.size[1]));
+        self.decor_vertices
+            .push(mk(decor.low, hw, bounds.size[0], bounds.size[1]));
+        self.decor_vertices
+            .push(mk(decor.high, hw, bounds.size[0], 0.0));
         self.decor_vertices.push(mk(decor.high, -hw, 0.0, 0.0));
         self.push_decor_quad();
     }

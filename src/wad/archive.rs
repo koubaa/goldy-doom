@@ -62,8 +62,8 @@ impl Archive {
             File::open(wad_path).with_context(|| format!("Failed to open {:?}", wad_path))?,
         );
 
-        let header: WadInfo = bincode::deserialize_from(&mut file)
-            .context("Could not read WAD header")?;
+        let header: WadInfo =
+            bincode::deserialize_from(&mut file).context("Could not read WAD header")?;
 
         ensure!(
             header.identifier == *IWAD_HEADER,
@@ -76,7 +76,12 @@ impl Archive {
         let mut index_map = IndexMap::new();
 
         file.seek(SeekFrom::Start(header.info_table_offset as u64))
-            .with_context(|| format!("Seeking to info_table_offset at {}", header.info_table_offset))?;
+            .with_context(|| {
+                format!(
+                    "Seeking to info_table_offset at {}",
+                    header.info_table_offset
+                )
+            })?;
 
         for i_lump in 0..header.num_lumps {
             let fileinfo: WadLump = bincode::deserialize_from(&mut file)
@@ -183,8 +188,12 @@ impl<'a> LumpReader<'a> {
             );
             (0..num_elements)
                 .map(|i_element| {
-                    bincode::deserialize_from(&mut file)
-                        .with_context(|| format!("Bad element {} in lump {} '{}'", i_element, index, info.name))
+                    bincode::deserialize_from(&mut file).with_context(|| {
+                        format!(
+                            "Bad element {} in lump {} '{}'",
+                            i_element, index, info.name
+                        )
+                    })
                 })
                 .collect()
         })
