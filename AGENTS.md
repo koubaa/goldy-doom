@@ -5,7 +5,7 @@ DOOM (1993) port using the `goldy` GPU library. Stress-tests goldy with a real g
 
 ## Current State: Boots and renders with doom1.wad
 
-The project **compiles and runs**. Tested against `doom1.wad` (DOOM Shareware, E1M1–E1M9). A window opens, geometry renders, the camera moves with WASD + mouse. The full pipeline works: WAD file → BSP walk → geometry extraction → GPU upload → goldy render loop. Slang shaders use goldy's bindless resource model via push constants.
+The program runs. Tested against `doom1.wad` (DOOM Shareware, E1M1–E1M9). A window opens, geometry renders, the camera moves with WASD + mouse. The full pipeline works: WAD file → BSP walk → geometry extraction → GPU upload → goldy render loop. Slang shaders use goldy's bindless resource model via push constants.
 
 ## Project Structure
 ```
@@ -79,7 +79,7 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 ## Known Gaps Surfaced
 
 1. **Texture formats**: goldy only supports RGBA8/BGRA8/RGBA16F/RGBA32F. No R8, RG8, R16 formats. DOOM needs single/two-channel textures for palette-indexed rendering. Workaround: expand to RGBA8 on CPU. *(resolved with workaround)*
-2. **Surface depth**: `Surface::new_with_depth` and `DepthStencilState` are now used — depth testing is active. *(resolved)*
+2. **Surface depth**: depth lives on offscreen `RenderTarget::new_with_depth`; scene is blitted to swapchain via task graph. *(resolved)*
 3. **Sky texture**: Loaded from WAD via `archive.metadata().sky_for()` and uploaded as a real texture. *(resolved)*
 
 ## Known Remaining Issues (from doom1.wad test run)
@@ -97,10 +97,10 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 - `create_buffer` / `create_buffer_init` (vertex, index, uniform)
 - `create_texture` (2D, various formats — u16 palette needs attention)
 - `create_render_pipeline` (3 pipelines with different depth/blend/cull)
-- `begin_render_pass` with depth target
+- `TaskGraph::render_pass` + `RenderPassBuilder` (offscreen RT with depth)
 - `bind_resources` / `bind_resources_raw` (bindless resource indices / resource slots)
 - `draw_indexed`
-- Surface acquire/present loop
+- `copy_render_target_to_swapchain` + `submit_graph_to_frame` + present
 
 ## Dependencies
 Defined in Cargo.toml. Key ones: `goldy` (path dep), `winit 0.30`, `glam`, `bytemuck`, `anyhow`, `bincode 1`, `serde`, `toml`, `indexmap`, `byteorder`, `clap`, `log`, `env_logger`.

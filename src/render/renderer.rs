@@ -102,7 +102,7 @@ impl Renderer {
 
         // Scene + light buffers are retained single-backed allocations: one allocation each,
         // kept across frames with a stable bindless identity, rewritten in place every frame
-        // via `Parcel::copy_into`.
+        // via [`TaskGraph::write_parcel`] each frame.
         let scene_uniforms = SceneUniforms::zeroed();
         let scene_bytes = bytemuck::bytes_of(&scene_uniforms);
         let scene_buf = retained_pool
