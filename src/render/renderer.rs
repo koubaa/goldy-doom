@@ -547,8 +547,7 @@ impl Renderer {
         self.frame_graph
             .copy_render_target_to_swapchain(scene_rt, swapchain);
 
-        let frame = surface.begin()?;
-        let frame = surface.submit_graph_to_frame(&mut self.frame_graph, frame)?;
+        let frame = surface.submit_graph(&mut self.frame_graph)?;
         frame.present()?;
 
         Ok(())
@@ -572,10 +571,6 @@ impl Renderer {
                 Err(e) => log::error!("Failed to resize scene render target: {e}"),
             }
         }
-    }
-
-    pub fn has_level(&self) -> bool {
-        self.level.is_some()
     }
 }
 

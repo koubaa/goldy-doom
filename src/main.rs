@@ -200,6 +200,7 @@ impl ApplicationHandler for App {
                     }
 
                     self.window = Some(window);
+                    self.window.as_ref().unwrap().request_redraw();
                 }
                 Err(e) => {
                     log::error!("Failed to create window: {}", e);
@@ -269,12 +270,6 @@ impl ApplicationHandler for App {
     ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             self.player.on_mouse_motion(delta.0, delta.1);
-        }
-    }
-
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(window) = &self.window {
-            window.request_redraw();
         }
     }
 }
