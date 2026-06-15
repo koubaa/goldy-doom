@@ -3,14 +3,16 @@ use super::vertex::{SkyVertex, SpriteVertex, StaticVertex};
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
+use goldy::swapchain_pool::PresentLease;
 use goldy::types::{
-    AddressMode, BufferKind, CompareFunction, DepthFormat, DepthStencilState, FilterMode,
-    IndexFormat, SamplerDesc, TextureFlags, TextureFormat, TextureKind,
+    AddressMode, BufferKind, DepthFormat, DepthStencilState, FilterMode, IndexFormat, SamplerDesc,
+    TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    Context as GpuContext, Device, Instance, LayoutCheckable, MosaicSlot, NodeAccess, Parcel,
-    RenderPipeline, RenderPipelineDesc, RenderTarget, RetainedPool, Sampler, ShaderLibrary,
-    ShaderModule, ShaderResourceSlot, StructuredBufferElement, Surface, TaskGraph,
+    write_to_parcel, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, MosaicSlot,
+    NodeAccess, Parcel, PresentGrant, RenderPipeline, RenderPipelineDesc, RenderTarget,
+    RetainedPool, Sampler, Scheme, ShaderLibrary, ShaderModule, ShaderResourceSlot,
+    StructuredBufferElement, SwapchainPool,
 };
 use std::sync::Arc;
 use winit::window::Window;
@@ -58,7 +60,9 @@ pub struct Renderer {
     device: Arc<Device>,
     context: Option<GpuContext>,
 
-    surface: Option<Surface>,
+    swapchain: Option<SwapchainPool>,
+    screen: Option<PresentLease>,
+    present: Option<PresentGrant>,
     static_pipeline: Option<RenderPipeline>,
     sky_pipeline: Option<RenderPipeline>,
     sprite_pipeline: Option<RenderPipeline>,
@@ -71,7 +75,7 @@ pub struct Renderer {
     retained_pool: RetainedPool,
 
     scene_rt: Option<RenderTarget>,
-    frame_graph: TaskGraph,
+    scheme: Option<Scheme>,
 }
 
 impl Renderer {
@@ -102,7 +106,7 @@ impl Renderer {
 
         // Scene + light buffers are retained single-backed allocations: one allocation each,
         // kept across frames with a stable bindless identity, rewritten in place every frame
-        // via [`TaskGraph::write_parcel`] each frame.
+        // via [`write_to_parcel`].
         let scene_uniforms = SceneUniforms::zeroed();
         let scene_bytes = bytemuck::bytes_of(&scene_uniforms);
         let scene_buf = retained_pool
@@ -130,7 +134,9 @@ impl Renderer {
             instance,
             device,
             context: None,
-            surface: None,
+            swapchain: None,
+            screen: None,
+            present: None,
             static_pipeline: None,
             sky_pipeline: None,
             sprite_pipeline: None,
@@ -140,30 +146,135 @@ impl Renderer {
             level: None,
             retained_pool,
             scene_rt: None,
-            frame_graph: TaskGraph::new(),
+            scheme: None,
         })
     }
 
-    /// Called once the window exists. Creates the surface and compiles pipelines.
+    fn create_scene_rt(
+        device: &Device,
+        swapchain: &SwapchainPool,
+    ) -> Result<RenderTarget> {
+        let (width, height) = swapchain.size();
+        RenderTarget::new_with_depth(
+            device,
+            width.max(1),
+            height.max(1),
+            swapchain.format(),
+            Some(DepthFormat::Depth24Plus),
+        )
+        .context("Failed to create offscreen scene render target")
+    }
+
+    fn record_scheme(
+        scheme: &mut Scheme,
+        static_pipeline: &RenderPipeline,
+        sky_pipeline: &RenderPipeline,
+        sprite_pipeline: &RenderPipeline,
+        scene_buf: &Parcel,
+        light_buf: &Parcel,
+        sampler: &Sampler,
+        level: &LevelGpuResources,
+        scene_rt: &RenderTarget,
+        screen: &PresentLease,
+    ) -> PresentGrant {
+        let shader_resources = [
+            ShaderResourceSlot::Parcel {
+                parcel: scene_buf,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: light_buf,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.wall_atlas,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.flat_atlas,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.palette,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Parcel {
+                parcel: &level.sky_texture,
+                access: NodeAccess::Read,
+            },
+            ShaderResourceSlot::Sampler(sampler),
+        ];
+
+        let mut pass = scheme.render_pass("doom", scene_rt);
+        pass.bind_shader_resources(&shader_resources);
+        pass.bind_parcel_mut(&level.geometry, NodeAccess::Read);
+        pass.clear(goldy::Color::BLACK);
+        pass.clear_depth(1.0);
+
+        if level.sky_index_count > 0 {
+            pass.set_pipeline(sky_pipeline);
+            pass.set_vertex_buffer(0, level.geometry.view(level.sky_vb));
+            pass.set_index_buffer(level.geometry.view(level.sky_ib), IndexFormat::Uint32);
+            pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
+        }
+
+        if level.static_index_count > 0 {
+            pass.set_pipeline(static_pipeline);
+            pass.set_vertex_buffer(0, level.geometry.view(level.static_vb));
+            pass.set_index_buffer(level.geometry.view(level.static_ib), IndexFormat::Uint32);
+            pass.draw_indexed(0..level.static_index_count, 0, 0..1);
+        }
+
+        if level.decor_index_count > 0 {
+            pass.set_pipeline(sprite_pipeline);
+            pass.set_vertex_buffer(0, level.geometry.view(level.decor_vb));
+            pass.set_index_buffer(level.geometry.view(level.decor_ib), IndexFormat::Uint32);
+            pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
+        }
+
+        pass.finish();
+        scheme.copy_to_present(scene_rt, screen);
+        scheme.grant_present(screen)
+    }
+
+    fn rerecord_scheme(&mut self) -> Result<()> {
+        let scheme = self.scheme.as_mut().context("scheme not initialized")?;
+        let level = self.level.as_ref().context("level not loaded")?;
+        let scene_rt = self
+            .scene_rt
+            .as_ref()
+            .context("scene render target not initialized")?;
+        let screen = self.screen.as_ref().context("present lease not initialized")?;
+
+        scheme.begin_rerecord();
+        let present = Self::record_scheme(
+            scheme,
+            self.static_pipeline.as_ref().context("static pipeline")?,
+            self.sky_pipeline.as_ref().context("sky pipeline")?,
+            self.sprite_pipeline.as_ref().context("sprite pipeline")?,
+            &self.scene_buf,
+            &self.light_buf,
+            &self.sampler,
+            level,
+            scene_rt,
+            screen,
+        );
+        self.present = Some(present);
+        Ok(())
+    }
+
+    /// Called once the window exists. Creates the swapchain and compiles pipelines.
     pub fn init_surface(&mut self, window: &Window) -> Result<()> {
         let context = self
             .device
             .create_context()
             .context("Failed to create submission context")?;
-        let surface = Surface::new(&context, window).context("Failed to create surface")?;
-        self.context = Some(context);
-        let target_format = surface.format();
-        surface.validate_pipeline_format(target_format)?;
+        let swapchain = SwapchainPool::new(&context, window, 3)
+            .context("Failed to create swapchain pool")?;
+        let screen = swapchain.lease();
+        let target_format = swapchain.format();
 
-        let (width, height) = surface.size();
-        let scene_rt = RenderTarget::new_with_depth(
-            &self.device,
-            width.max(1),
-            height.max(1),
-            target_format,
-            Some(DepthFormat::Depth24Plus),
-        )
-        .context("Failed to create offscreen scene render target")?;
+        let scene_rt = Self::create_scene_rt(&self.device, &swapchain)?;
 
         // Register doom_common as a shader library so import doom_common resolves via the library system
         let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -253,14 +364,19 @@ impl Renderer {
         )
         .context("Failed to create sprite pipeline")?;
 
-        self.surface = Some(surface);
+        self.context = Some(context);
+        self.swapchain = Some(swapchain);
+        self.screen = Some(screen);
         self.scene_rt = Some(scene_rt);
+        self.scheme = Some(Scheme::new(
+            self.context.as_ref().context("context not initialized")?,
+        ));
         self.static_pipeline = Some(static_pipeline);
         self.sky_pipeline = Some(sky_pipeline);
         self.sprite_pipeline = Some(sprite_pipeline);
 
         log::info!(
-            "Renderer: surface + pipelines initialized (format: {:?})",
+            "Renderer: swapchain + pipelines initialized (format: {:?})",
             target_format
         );
         Ok(())
@@ -399,6 +515,8 @@ impl Renderer {
             tiled_band_size,
         });
 
+        self.rerecord_scheme()?;
+
         Ok(())
     }
 
@@ -409,16 +527,13 @@ impl Renderer {
         time: f32,
         light_levels: &[f32],
     ) -> Result<()> {
-        let surface = match &self.surface {
-            Some(s) => s,
-            None => return Ok(()),
-        };
+        if self.swapchain.is_none() {
+            return Ok(());
+        }
         let level = match &self.level {
             Some(l) => l,
             None => return Ok(()),
         };
-        let static_pipeline = self.static_pipeline.as_ref().unwrap();
-        let sky_pipeline = self.sky_pipeline.as_ref().unwrap();
 
         let uniforms = SceneUniforms {
             projection: proj.to_cols_array_2d(),
@@ -428,89 +543,22 @@ impl Renderer {
             time,
             tiled_band_size: level.tiled_band_size,
         };
-        let scene_rt = self
-            .scene_rt
-            .as_ref()
-            .context("scene render target not initialized")?;
 
-        self.frame_graph.clear();
-        self.frame_graph.write_parcel(
-            &self.scene_buf,
-            0,
-            bytemuck::bytes_of(&uniforms).to_vec(),
-        )?;
+        let ctx = self.context.as_ref().context("context not initialized")?;
+        write_to_parcel(ctx, &self.scene_buf, 0, bytemuck::bytes_of(&uniforms))?;
         if light_levels.len() >= 256 {
-            self.frame_graph.write_parcel(
+            write_to_parcel(
+                ctx,
                 &self.light_buf,
                 0,
-                bytemuck::cast_slice(&light_levels[..256]).to_vec(),
+                bytemuck::cast_slice(&light_levels[..256]),
             )?;
         }
 
-        let shader_resources = [
-            ShaderResourceSlot::Parcel {
-                parcel: &self.scene_buf,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &self.light_buf,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &level.wall_atlas,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &level.flat_atlas,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &level.palette,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &level.sky_texture,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Sampler(&self.sampler),
-        ];
-
-        let mut pass = self.frame_graph.render_pass("doom", scene_rt);
-        pass.bind_shader_resources(&shader_resources);
-        pass.bind_parcel_mut(&level.geometry, NodeAccess::Read);
-        pass.clear(goldy::Color::BLACK);
-        pass.clear_depth(1.0);
-
-        if level.sky_index_count > 0 {
-            pass.set_pipeline(sky_pipeline);
-            pass.set_vertex_buffer(0, level.geometry.view(level.sky_vb));
-            pass.set_index_buffer(level.geometry.view(level.sky_ib), IndexFormat::Uint32);
-            pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
-        }
-
-        if level.static_index_count > 0 {
-            pass.set_pipeline(static_pipeline);
-            pass.set_vertex_buffer(0, level.geometry.view(level.static_vb));
-            pass.set_index_buffer(level.geometry.view(level.static_ib), IndexFormat::Uint32);
-            pass.draw_indexed(0..level.static_index_count, 0, 0..1);
-        }
-
-        if level.decor_index_count > 0 {
-            let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
-            pass.set_pipeline(sprite_pipeline);
-            pass.set_vertex_buffer(0, level.geometry.view(level.decor_vb));
-            pass.set_index_buffer(level.geometry.view(level.decor_ib), IndexFormat::Uint32);
-            pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
-        }
-
-        pass.finish_recorded();
-
-        let swapchain = self.frame_graph.declare_swapchain_output();
-        self.frame_graph
-            .copy_render_target_to_swapchain(scene_rt, swapchain);
-
-        let frame = surface.submit_graph(&mut self.frame_graph)?;
-        frame.present()?;
+        let scheme = self.scheme.as_mut().context("scheme not initialized")?;
+        let present = self.present.as_ref().context("present grant not recorded")?;
+        let submission = scheme.submit()?;
+        present.consume(&submission)?;
 
         Ok(())
     }
@@ -519,17 +567,18 @@ impl Renderer {
         if width == 0 || height == 0 {
             return;
         }
-        if let Some(surface) = &mut self.surface {
-            let _ = surface.resize(width, height);
-            let format = surface.format();
-            match RenderTarget::new_with_depth(
-                &self.device,
-                width,
-                height,
-                format,
-                Some(DepthFormat::Depth24Plus),
-            ) {
-                Ok(rt) => self.scene_rt = Some(rt),
+        if let Some(swapchain) = &self.swapchain {
+            if let Err(e) = swapchain.resize(width, height) {
+                log::error!("Failed to resize swapchain: {e}");
+                return;
+            }
+            match Self::create_scene_rt(&self.device, swapchain) {
+                Ok(rt) => {
+                    self.scene_rt = Some(rt);
+                    if let Err(e) = self.rerecord_scheme() {
+                        log::error!("Failed to rerecord scheme after resize: {e}");
+                    }
+                }
                 Err(e) => log::error!("Failed to resize scene render target: {e}"),
             }
         }

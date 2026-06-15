@@ -76,12 +76,6 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 - Flat atlas: u8 → RGBA8 (R = palette index, G=0, B=0, A=255).
 - Palette: RGB → RGBA8 (R, G, B from source, A=255).
 
-## Known Gaps Surfaced
-
-1. **Texture formats**: goldy only supports RGBA8/BGRA8/RGBA16F/RGBA32F. No R8, RG8, R16 formats. DOOM needs single/two-channel textures for palette-indexed rendering. Workaround: expand to RGBA8 on CPU. *(resolved with workaround)*
-2. **Surface depth**: depth lives on offscreen `RenderTarget::new_with_depth`; scene is blitted to swapchain via task graph. *(resolved)*
-3. **Sky texture**: Loaded from WAD via `archive.metadata().sky_for()` and uploaded as a real texture. *(resolved)*
-
 ## Known Remaining Issues (from doom1.wad test run)
 
 1. **Unknown linedef special types**: The visitor logs errors for trigger/action linedef types it doesn't handle: 8, 9, 35, 48, 97. These are interactive types (scrolling walls, doors, teleporters) — non-fatal for passive rendering, but doors/scrollers won't animate.
@@ -93,14 +87,22 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 2. **Light animation** — `lights.rs` is wired but the per-frame `light_levels` passed to `render_frame` are all `1.0`. Hook up the actual animated light values from `LightInfo`.
 3. **Sprite sorting** — Sprites currently rely on BSP order; add distance-based sort for correct sprite-on-sprite overlap.
 
+## Scheme migration (June 2026)
+
+goldy-doom uses the retained-scheme path:
+
+- **Worker scheme** (`Scheme::new`): render pass recorded once in `load_level` / on resize via `begin_rerecord`; resubmitted each frame with `scheme.submit()`.
+- **Per-frame uploads**: `write_to_parcel(ctx, parcel, …)` for scene uniforms and light levels (not graph structure).
+- **Present**: `SwapchainPool::lease()` → `grant_present` → `present.consume(&submission)`.
+- **No `TaskGraph`**, no `Surface::submit_graph`, no per-frame `clear()`+rebuild.
+
 ## Key Goldy API Features This Will Stress
-- `create_buffer` / `create_buffer_init` (vertex, index, uniform)
-- `create_texture` (2D, various formats — u16 palette needs attention)
-- `create_render_pipeline` (3 pipelines with different depth/blend/cull)
-- `TaskGraph::render_pass` + `RenderPassBuilder` (offscreen RT with depth)
-- `bind_resources` / `bind_resources_raw` (bindless resource indices / resource slots)
-- `draw_indexed`
-- `copy_render_target_to_swapchain` + `submit_graph_to_frame` + present
+- `RetainedPool` (parcels, mosaic geometry, textures)
+- `Scheme::render_pass` + indexed draws (sky, static, sprite batches)
+- `write_to_parcel` (per-frame scene + light uploads)
+- `Scheme::submit` + `PresentGrant::consume` (swapchain present)
+- `SwapchainPool` + offscreen depth `RenderTarget`
+- `bind_shader_resources` / mosaic `bind_parcel_mut` + vertex/index buffer views
 
 ## Dependencies
 Defined in Cargo.toml. Key ones: `goldy` (path dep), `winit 0.30`, `glam`, `bytemuck`, `anyhow`, `bincode 1`, `serde`, `toml`, `indexmap`, `byteorder`, `clap`, `log`, `env_logger`.
