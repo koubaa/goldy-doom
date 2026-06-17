@@ -102,7 +102,7 @@ goldy-doom uses the retained-scheme path:
 - `write_to_parcel` (per-frame scene + light uploads)
 - `Scheme::submit` + `PresentGrant::consume` (swapchain present)
 - `SwapchainPool` + offscreen depth `RenderTarget`
-- `bind_shader_resources` / mosaic `bind_parcel_mut` + vertex/index buffer views
+- `with_shader_resources` / mosaic `with_parcel` + vertex/index buffer views
 
 ## Dependencies
 Defined in Cargo.toml. Key ones: `goldy` (path dep), `winit 0.30`, `glam`, `bytemuck`, `anyhow`, `bincode 1`, `serde`, `toml`, `indexmap`, `byteorder`, `clap`, `log`, `env_logger`.

@@ -191,8 +191,8 @@ impl Renderer {
         ];
 
         let mut pass = scheme.render_pass("doom", scene_rt);
-        pass.bind_shader_resources(&shader_resources);
-        pass.bind_parcel_mut(&level.geometry, NodeAccess::Read);
+        pass.with_shader_resources(&shader_resources);
+        pass.with_parcel(&level.geometry, NodeAccess::Read);
         pass.clear(goldy::Color::BLACK);
         pass.clear_depth(1.0);
 
