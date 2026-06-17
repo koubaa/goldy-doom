@@ -9,10 +9,10 @@ use goldy::types::{
     TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    write_to_parcel, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, MosaicSlot,
-    NodeAccess, Parcel, PresentGrant, RenderPipeline, RenderPipelineDesc, RenderTarget,
-    RetainedPool, Sampler, Scheme, ShaderLibrary, ShaderModule, ShaderResourceSlot,
-    StructuredBufferElement, SwapchainPool,
+    write_to_parcel, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, Lease,
+    LeaseRenderTarget, MosaicSlot, NodeAccess, Parcel, PresentGrant, RenderPipeline,
+    RenderPipelineDesc, RetainedPool, Sampler, Scheme, ShaderLibrary, ShaderModule,
+    ShaderResourceSlot, StructuredBufferElement, SwapchainPool,
 };
 use std::sync::Arc;
 use winit::window::Window;
@@ -74,7 +74,7 @@ pub struct Renderer {
     level: Option<LevelGpuResources>,
     retained_pool: RetainedPool,
 
-    scene_rt: Option<RenderTarget>,
+    scene_rt: Option<Lease<LeaseRenderTarget>>,
     scheme: Option<Scheme>,
 }
 
@@ -150,21 +150,6 @@ impl Renderer {
         })
     }
 
-    fn create_scene_rt(
-        device: &Device,
-        swapchain: &SwapchainPool,
-    ) -> Result<RenderTarget> {
-        let (width, height) = swapchain.size();
-        RenderTarget::new_with_depth(
-            device,
-            width.max(1),
-            height.max(1),
-            swapchain.format(),
-            Some(DepthFormat::Depth24Plus),
-        )
-        .context("Failed to create offscreen scene render target")
-    }
-
     fn record_scheme(
         scheme: &mut Scheme,
         static_pipeline: &RenderPipeline,
@@ -174,7 +159,7 @@ impl Renderer {
         light_buf: &Parcel,
         sampler: &Sampler,
         level: &LevelGpuResources,
-        scene_rt: &RenderTarget,
+        scene_rt: &Lease<LeaseRenderTarget>,
         screen: &PresentLease,
     ) -> PresentGrant {
         let shader_resources = [
@@ -238,15 +223,24 @@ impl Renderer {
     }
 
     fn rerecord_scheme(&mut self) -> Result<()> {
+        let swapchain = self.swapchain.as_ref().context("swapchain not initialized")?;
         let scheme = self.scheme.as_mut().context("scheme not initialized")?;
         let level = self.level.as_ref().context("level not loaded")?;
-        let scene_rt = self
-            .scene_rt
-            .as_ref()
-            .context("scene render target not initialized")?;
         let screen = self.screen.as_ref().context("present lease not initialized")?;
 
         scheme.begin_rerecord();
+        let (width, height) = swapchain.size();
+        let scene_rt = scheme
+            .lease_render_target(
+                width.max(1),
+                height.max(1),
+                swapchain.format(),
+                Some(DepthFormat::Depth24Plus),
+            )
+            .context("Failed to lease offscreen scene render target")?;
+        self.scene_rt = Some(scene_rt);
+
+        let scene_rt = self.scene_rt.as_ref().context("scene render target lease missing")?;
         let present = Self::record_scheme(
             scheme,
             self.static_pipeline.as_ref().context("static pipeline")?,
@@ -273,8 +267,6 @@ impl Renderer {
             .context("Failed to create swapchain pool")?;
         let screen = swapchain.lease();
         let target_format = swapchain.format();
-
-        let scene_rt = Self::create_scene_rt(&self.device, &swapchain)?;
 
         // Register doom_common as a shader library so import doom_common resolves via the library system
         let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -367,10 +359,10 @@ impl Renderer {
         self.context = Some(context);
         self.swapchain = Some(swapchain);
         self.screen = Some(screen);
-        self.scene_rt = Some(scene_rt);
         self.scheme = Some(Scheme::new(
             self.context.as_ref().context("context not initialized")?,
         ));
+        self.scene_rt = None;
         self.static_pipeline = Some(static_pipeline);
         self.sky_pipeline = Some(sky_pipeline);
         self.sprite_pipeline = Some(sprite_pipeline);
@@ -572,14 +564,8 @@ impl Renderer {
                 log::error!("Failed to resize swapchain: {e}");
                 return;
             }
-            match Self::create_scene_rt(&self.device, swapchain) {
-                Ok(rt) => {
-                    self.scene_rt = Some(rt);
-                    if let Err(e) = self.rerecord_scheme() {
-                        log::error!("Failed to rerecord scheme after resize: {e}");
-                    }
-                }
-                Err(e) => log::error!("Failed to resize scene render target: {e}"),
+            if let Err(e) = self.rerecord_scheme() {
+                log::error!("Failed to rerecord scheme after resize: {e}");
             }
         }
     }
