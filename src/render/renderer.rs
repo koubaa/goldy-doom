@@ -9,11 +9,20 @@ use goldy::types::{
     TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    write_to_parcel, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, Lease,
-    LeaseRenderTarget, MosaicSlot, NodeAccess, Parcel, PresentGrant, RenderPipeline,
-    RenderPipelineDesc, RetainedPool, Sampler, Scheme, ShaderLibrary, ShaderModule,
-    ShaderResourceSlot, StructuredBufferElement, SwapchainPool,
+    Buffer, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, Lease, LeaseRenderTarget,
+    NodeAccess, Parcel, PresentGrant, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, Scheme,
+    ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SwapchainPool, Init, ordinal,
 };
+
+/// Upload CPU bytes into a retained buffer parcel via a property-only micro-scheme dispatch.
+fn upload_parcel(ctx: &GpuContext, parcel: &Parcel, offset: u64, data: &[u8]) -> Result<()> {
+    let mut upload = Scheme::new(ctx);
+    upload
+        .commit_write_parcel(parcel, offset, data.to_vec())
+        .context("commit_write_parcel")?;
+    upload.submit().context("upload scheme submit")?;
+    Ok(())
+}
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -32,17 +41,17 @@ pub struct SceneUniforms {
 impl StructuredBufferElement for SceneUniforms {}
 
 struct LevelGpuResources {
-    geometry: Parcel,
-    static_vb: MosaicSlot,
-    static_ib: MosaicSlot,
+    geometry: Buffer,
+    static_vb: usize,
+    static_ib: usize,
     static_index_count: u32,
 
-    sky_vb: MosaicSlot,
-    sky_ib: MosaicSlot,
+    sky_vb: usize,
+    sky_ib: usize,
     sky_index_count: u32,
 
-    decor_vb: MosaicSlot,
-    decor_ib: MosaicSlot,
+    decor_vb: usize,
+    decor_ib: usize,
     decor_index_count: u32,
 
     wall_atlas: Parcel,
@@ -68,8 +77,8 @@ pub struct Renderer {
     sprite_pipeline: Option<RenderPipeline>,
 
     sampler: Sampler,
-    scene_buf: Parcel,
-    light_buf: Parcel,
+    scene_buf: Buffer,
+    light_buf: Buffer,
 
     level: Option<LevelGpuResources>,
     retained_pool: RetainedPool,
@@ -106,7 +115,7 @@ impl Renderer {
 
         // Scene + light buffers are retained single-backed allocations: one allocation each,
         // kept across frames with a stable bindless identity, rewritten in place every frame
-        // via [`write_to_parcel`].
+        // via [`upload_parcel`] (property-only micro-scheme dispatch).
         let scene_uniforms = SceneUniforms::zeroed();
         let scene_bytes = bytemuck::bytes_of(&scene_uniforms);
         let scene_buf = retained_pool
@@ -155,8 +164,8 @@ impl Renderer {
         static_pipeline: &RenderPipeline,
         sky_pipeline: &RenderPipeline,
         sprite_pipeline: &RenderPipeline,
-        scene_buf: &Parcel,
-        light_buf: &Parcel,
+        scene_buf: &Buffer,
+        light_buf: &Buffer,
         sampler: &Sampler,
         level: &LevelGpuResources,
         scene_rt: &Lease<LeaseRenderTarget>,
@@ -164,11 +173,11 @@ impl Renderer {
     ) -> PresentGrant {
         let shader_resources = [
             ShaderResourceSlot::Parcel {
-                parcel: scene_buf,
+                parcel: &*scene_buf,
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Parcel {
-                parcel: light_buf,
+                parcel: &*light_buf,
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Parcel {
@@ -192,28 +201,28 @@ impl Renderer {
 
         let mut pass = scheme.render_pass("doom", scene_rt);
         pass.with_shader_resources(&shader_resources);
-        pass.with_parcel(&level.geometry, NodeAccess::Read);
+        pass.with_buffer_dependency(&level.geometry, NodeAccess::Read);
         pass.clear(goldy::Color::BLACK);
         pass.clear_depth(1.0);
 
         if level.sky_index_count > 0 {
             pass.set_pipeline(sky_pipeline);
-            pass.set_vertex_buffer(0, level.geometry.view(level.sky_vb));
-            pass.set_index_buffer(level.geometry.view(level.sky_ib), IndexFormat::Uint32);
+            pass.set_vertex_buffer(0, &level.geometry[level.sky_vb]);
+            pass.set_index_buffer(&level.geometry[level.sky_ib], IndexFormat::Uint32);
             pass.draw_indexed(0..level.sky_index_count, 0, 0..1);
         }
 
         if level.static_index_count > 0 {
             pass.set_pipeline(static_pipeline);
-            pass.set_vertex_buffer(0, level.geometry.view(level.static_vb));
-            pass.set_index_buffer(level.geometry.view(level.static_ib), IndexFormat::Uint32);
+            pass.set_vertex_buffer(0, &level.geometry[level.static_vb]);
+            pass.set_index_buffer(&level.geometry[level.static_ib], IndexFormat::Uint32);
             pass.draw_indexed(0..level.static_index_count, 0, 0..1);
         }
 
         if level.decor_index_count > 0 {
             pass.set_pipeline(sprite_pipeline);
-            pass.set_vertex_buffer(0, level.geometry.view(level.decor_vb));
-            pass.set_index_buffer(level.geometry.view(level.decor_ib), IndexFormat::Uint32);
+            pass.set_vertex_buffer(0, &level.geometry[level.decor_vb]);
+            pass.set_index_buffer(&level.geometry[level.decor_ib], IndexFormat::Uint32);
             pass.draw_indexed(0..level.decor_index_count, 0, 0..1);
         }
 
@@ -383,24 +392,29 @@ impl Renderer {
         sky_texture: Option<(Vec<u8>, [usize; 2])>,
         tiled_band_size: f32,
     ) -> Result<()> {
-        // Single mosaic parcel for all level geometry — one GPU allocation, six sub-views.
-        let mut m = self.retained_pool.mosaic();
-        let static_vb = m.emplace(&mesh.static_vertices);
-        let static_ib = m.emplace(&mesh.static_indices);
-        let sky_vb = m.emplace(&mesh.sky_vertices);
-        let sky_ib = m.emplace(&mesh.sky_indices);
-
-        let decor_vb = if mesh.decor_vertices.is_empty() {
-            m.emplace(&[SpriteVertex::zeroed()])
-        } else {
-            m.emplace(&mesh.decor_vertices)
-        };
-        let decor_ib = if mesh.decor_indices.is_empty() {
-            m.emplace(&[0u32])
-        } else {
-            m.emplace(&mesh.decor_indices)
-        };
-        let geometry = m.build().context("level geometry mosaic")?;
+        // Single record buffer for all level geometry — one GPU allocation, six parcels.
+        let geometry = self.retained_pool.acquire_record([
+            ordinal(Init::data(&mesh.static_vertices)),
+            ordinal(Init::data(&mesh.static_indices)),
+            ordinal(Init::data(&mesh.sky_vertices)),
+            ordinal(Init::data(&mesh.sky_indices)),
+            ordinal(if mesh.decor_vertices.is_empty() {
+                Init::data(&[SpriteVertex::zeroed()])
+            } else {
+                Init::data(&mesh.decor_vertices)
+            }),
+            ordinal(if mesh.decor_indices.is_empty() {
+                Init::data(&[0u32])
+            } else {
+                Init::data(&mesh.decor_indices)
+            }),
+        ])?;
+        let static_vb = 0;
+        let static_ib = 1;
+        let sky_vb = 2;
+        let sky_ib = 3;
+        let decor_vb = 4;
+        let decor_ib = 5;
 
         // Wall atlas: u16 raw bytes → Rg8Unorm (R=palette_idx, G=transparency).
         let (wall_w, wall_h) = (wall_atlas.1[0] as u32, wall_atlas.1[1] as u32);
@@ -537,9 +551,9 @@ impl Renderer {
         };
 
         let ctx = self.context.as_ref().context("context not initialized")?;
-        write_to_parcel(ctx, &self.scene_buf, 0, bytemuck::bytes_of(&uniforms))?;
+        upload_parcel(ctx, &*self.scene_buf, 0, bytemuck::bytes_of(&uniforms))?;
         if light_levels.len() >= 256 {
-            write_to_parcel(
+            upload_parcel(
                 ctx,
                 &self.light_buf,
                 0,
