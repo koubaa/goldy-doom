@@ -91,7 +91,7 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 
 goldy-doom uses the retained-scheme path:
 
-- **Worker scheme** (`Scheme::new`): render pass recorded once in `load_level` / on resize via `begin_rerecord`; resubmitted each frame with `scheme.submit()`.
+- **Worker scheme** (`Scheme::new`): render pass recorded once in `load_level` / on resize via a fresh `Scheme::new`; resubmitted each frame with `scheme.submit()`.
 - **Per-frame uploads**: `write_to_parcel(ctx, parcel, …)` for scene uniforms and light levels (not graph structure).
 - **Present**: `SwapchainPool::lease()` → `grant_present` → `present.consume(&submission)`.
 - **No `TaskGraph`**, no `Surface::submit_graph`, no per-frame `clear()`+rebuild.

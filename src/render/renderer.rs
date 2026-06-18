@@ -233,11 +233,11 @@ impl Renderer {
 
     fn rerecord_scheme(&mut self) -> Result<()> {
         let swapchain = self.swapchain.as_ref().context("swapchain not initialized")?;
-        let scheme = self.scheme.as_mut().context("scheme not initialized")?;
+        let context = self.context.as_ref().context("context not initialized")?;
         let level = self.level.as_ref().context("level not loaded")?;
         let screen = self.screen.as_ref().context("present lease not initialized")?;
 
-        scheme.begin_rerecord();
+        let mut scheme = Scheme::new(context);
         let (width, height) = swapchain.size();
         let scene_rt = scheme
             .lease_render_target(
@@ -251,7 +251,7 @@ impl Renderer {
 
         let scene_rt = self.scene_rt.as_ref().context("scene render target lease missing")?;
         let present = Self::record_scheme(
-            scheme,
+            &mut scheme,
             self.static_pipeline.as_ref().context("static pipeline")?,
             self.sky_pipeline.as_ref().context("sky pipeline")?,
             self.sprite_pipeline.as_ref().context("sprite pipeline")?,
@@ -263,6 +263,7 @@ impl Renderer {
             screen,
         );
         self.present = Some(present);
+        self.scheme = Some(scheme);
         Ok(())
     }
 
