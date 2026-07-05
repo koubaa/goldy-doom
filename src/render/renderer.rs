@@ -11,7 +11,8 @@ use goldy::types::{
 use goldy::{
     Buffer, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, Lease, LeaseRenderTarget,
     NodeAccess, Parcel, PresentGrant, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, Scheme,
-    ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SwapchainPool, Init, ordinal,
+    ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SwapchainPool, Texture,
+    Init, ordinal,
 };
 
 /// Upload CPU bytes into a retained buffer parcel via a property-only micro-scheme dispatch.
@@ -54,10 +55,10 @@ struct LevelGpuResources {
     decor_ib: usize,
     decor_index_count: u32,
 
-    wall_atlas: Parcel,
-    flat_atlas: Parcel,
-    palette: Parcel,
-    sky_texture: Parcel,
+    wall_atlas: Texture,
+    flat_atlas: Texture,
+    palette: Texture,
+    sky_texture: Texture,
 
     wall_atlas_size: [f32; 2],
     flat_atlas_size: [f32; 2],
@@ -181,19 +182,19 @@ impl Renderer {
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Parcel {
-                parcel: &level.wall_atlas,
+                parcel: &*level.wall_atlas,
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Parcel {
-                parcel: &level.flat_atlas,
+                parcel: &*level.flat_atlas,
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Parcel {
-                parcel: &level.palette,
+                parcel: &*level.palette,
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Parcel {
-                parcel: &level.sky_texture,
+                parcel: &*level.sky_texture,
                 access: NodeAccess::Read,
             },
             ShaderResourceSlot::Sampler(sampler),
