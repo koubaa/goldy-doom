@@ -3,16 +3,15 @@ use super::vertex::{SkyVertex, SpriteVertex, StaticVertex};
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
-use goldy::swapchain_pool::PresentLease;
 use goldy::types::{
     AddressMode, BufferKind, DepthFormat, DepthStencilState, FilterMode, IndexFormat, SamplerDesc,
-    TextureFlags, TextureFormat, TextureKind,
+    SurfaceConfig, TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    Buffer, Context as GpuContext, Device, Grant, Instance, LayoutCheckable, Lease, LeaseRenderTarget,
-    NodeAccess, Parcel, PresentGrant, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, Scheme,
-    ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SwapchainPool, Texture,
-    Init, ordinal,
+    Buffer, Context as GpuContext, Device, Instance, LayoutCheckable, Lease, LeaseRenderTarget,
+    NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, Scheme,
+    ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SurfaceExchange, Texture,
+    Transaction, Init, ordinal,
 };
 
 /// Upload CPU bytes into a retained buffer parcel via a property-only micro-scheme dispatch.
@@ -70,9 +69,8 @@ pub struct Renderer {
     device: Arc<Device>,
     context: Option<GpuContext>,
 
-    swapchain: Option<SwapchainPool>,
-    screen: Option<PresentLease>,
-    present: Option<PresentGrant>,
+    surface: Option<SurfaceExchange>,
+    present: Option<Transaction>,
     static_pipeline: Option<RenderPipeline>,
     sky_pipeline: Option<RenderPipeline>,
     sprite_pipeline: Option<RenderPipeline>,
@@ -144,8 +142,7 @@ impl Renderer {
             instance,
             device,
             context: None,
-            swapchain: None,
-            screen: None,
+            surface: None,
             present: None,
             static_pipeline: None,
             sky_pipeline: None,
@@ -162,6 +159,7 @@ impl Renderer {
 
     fn record_scheme(
         scheme: &mut Scheme,
+        surface: &SurfaceExchange,
         static_pipeline: &RenderPipeline,
         sky_pipeline: &RenderPipeline,
         sprite_pipeline: &RenderPipeline,
@@ -170,8 +168,7 @@ impl Renderer {
         sampler: &Sampler,
         level: &LevelGpuResources,
         scene_rt: &Lease<LeaseRenderTarget>,
-        screen: &PresentLease,
-    ) -> PresentGrant {
+    ) -> Result<Transaction> {
         let shader_resources = [
             ShaderResourceSlot::Parcel {
                 parcel: &*scene_buf,
@@ -228,23 +225,23 @@ impl Renderer {
         }
 
         pass.finish();
-        scheme.copy_to_present(scene_rt, screen);
-        scheme.grant_present(screen)
+        surface
+            .bind_render_target(scheme, scene_rt)
+            .map_err(Into::into)
     }
 
     fn rerecord_scheme(&mut self) -> Result<()> {
-        let swapchain = self.swapchain.as_ref().context("swapchain not initialized")?;
+        let surface = self.surface.as_ref().context("surface not initialized")?;
         let context = self.context.as_ref().context("context not initialized")?;
         let level = self.level.as_ref().context("level not loaded")?;
-        let screen = self.screen.as_ref().context("present lease not initialized")?;
 
         let mut scheme = Scheme::new(context);
-        let (width, height) = swapchain.size();
+        let (width, height) = surface.size();
         let scene_rt = scheme
             .lease_render_target(
                 width.max(1),
                 height.max(1),
-                swapchain.format(),
+                surface.format(),
                 Some(DepthFormat::Depth24Plus),
             )
             .context("Failed to lease offscreen scene render target")?;
@@ -253,6 +250,7 @@ impl Renderer {
         let scene_rt = self.scene_rt.as_ref().context("scene render target lease missing")?;
         let present = Self::record_scheme(
             &mut scheme,
+            surface,
             self.static_pipeline.as_ref().context("static pipeline")?,
             self.sky_pipeline.as_ref().context("sky pipeline")?,
             self.sprite_pipeline.as_ref().context("sprite pipeline")?,
@@ -261,8 +259,7 @@ impl Renderer {
             &self.sampler,
             level,
             scene_rt,
-            screen,
-        );
+        )?;
         self.present = Some(present);
         self.scheme = Some(scheme);
         Ok(())
@@ -274,10 +271,9 @@ impl Renderer {
             .device
             .create_context()
             .context("Failed to create submission context")?;
-        let swapchain = SwapchainPool::new(&context, window, 3)
-            .context("Failed to create swapchain pool")?;
-        let screen = swapchain.lease();
-        let target_format = swapchain.format();
+        let surface = SurfaceExchange::new(&context, window, SurfaceConfig::default())
+            .context("Failed to create surface exchange")?;
+        let target_format = surface.format();
 
         // Register doom_common as a shader library so import doom_common resolves via the library system
         let shader_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -368,8 +364,7 @@ impl Renderer {
         .context("Failed to create sprite pipeline")?;
 
         self.context = Some(context);
-        self.swapchain = Some(swapchain);
-        self.screen = Some(screen);
+        self.surface = Some(surface);
         self.scheme = Some(Scheme::new(
             self.context.as_ref().context("context not initialized")?,
         ));
@@ -379,7 +374,7 @@ impl Renderer {
         self.sprite_pipeline = Some(sprite_pipeline);
 
         log::info!(
-            "Renderer: swapchain + pipelines initialized (format: {:?})",
+            "Renderer: surface + pipelines initialized (format: {:?})",
             target_format
         );
         Ok(())
@@ -535,7 +530,7 @@ impl Renderer {
         time: f32,
         light_levels: &[f32],
     ) -> Result<()> {
-        if self.swapchain.is_none() {
+        if self.surface.is_none() {
             return Ok(());
         }
         let level = match &self.level {
@@ -564,9 +559,9 @@ impl Renderer {
         }
 
         let scheme = self.scheme.as_mut().context("scheme not initialized")?;
-        let present = self.present.as_ref().context("present grant not recorded")?;
-        let submission = scheme.submit()?;
-        present.consume(&submission)?;
+        let present_tx = self.present.as_ref().context("present transaction not recorded")?;
+        let mut submission = scheme.submit()?;
+        present_tx.claim(&mut submission)?.consume()?;
 
         Ok(())
     }
@@ -575,9 +570,9 @@ impl Renderer {
         if width == 0 || height == 0 {
             return;
         }
-        if let Some(swapchain) = &self.swapchain {
-            if let Err(e) = swapchain.resize(width, height) {
-                log::error!("Failed to resize swapchain: {e}");
+        if let Some(surface) = &self.surface {
+            if let Err(e) = surface.resize(width, height) {
+                log::error!("Failed to resize surface: {e}");
                 return;
             }
             if let Err(e) = self.rerecord_scheme() {
