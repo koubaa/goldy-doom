@@ -87,21 +87,13 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 2. **Light animation** — `lights.rs` is wired but the per-frame `light_levels` passed to `render_frame` are all `1.0`. Hook up the actual animated light values from `LightInfo`.
 3. **Sprite sorting** — Sprites currently rely on BSP order; add distance-based sort for correct sprite-on-sprite overlap.
 
-## Scheme migration (June 2026)
-
-goldy-doom uses the retained-scheme path:
-
-- **Worker scheme** (`Scheme::new`): render pass recorded once in `load_level` / on resize via a fresh `Scheme::new`; resubmitted each frame with `scheme.submit()`.
-- **Per-frame uploads**: `write_to_parcel(ctx, parcel, …)` for scene uniforms and light levels (not graph structure).
-- **Present**: `SwapchainPool::lease()` → `grant_present` → `present.consume(&submission)`.
-- **No `TaskGraph`**, no `Surface::submit_graph`, no per-frame `clear()`+rebuild.
 
 ## Key Goldy API Features This Will Stress
 - `RetainedPool` (parcels, mosaic geometry, textures)
 - `Scheme::render_pass` + indexed draws (sky, static, sprite batches)
 - `write_to_parcel` (per-frame scene + light uploads)
-- `Scheme::submit` + `PresentGrant::consume` (swapchain present)
-- `SwapchainPool` + offscreen depth `RenderTarget`
+- `Scheme::submit` + `Transaction::claim` + `Claim::consume` (swapchain present)
+- `SurfaceExchange` + offscreen depth `RenderTarget`
 - `with_shader_resources` / mosaic `with_parcel` + vertex/index buffer views
 
 ## Dependencies
