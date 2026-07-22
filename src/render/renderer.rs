@@ -18,8 +18,8 @@ use goldy::{
 fn upload_parcel(ctx: &GpuContext, parcel: &Parcel, offset: u64, data: &[u8]) -> Result<()> {
     let mut upload = Scheme::new(ctx);
     upload
-        .commit_write_parcel(parcel, offset, data.to_vec())
-        .context("commit_write_parcel")?;
+        .write_parcel(parcel, offset, data.to_vec())
+        .context("write_parcel")?;
     upload.submit().context("upload scheme submit")?;
     Ok(())
 }

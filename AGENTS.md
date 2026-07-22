@@ -90,7 +90,7 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 ## Key Goldy API Features This Will Stress
 - `RetainedPool` (parcels, mosaic geometry, textures)
 - `Scheme::render_pass` + indexed draws (sky, static, sprite batches)
-- `write_to_parcel` (per-frame scene + light uploads)
+- `write_parcel` via upload micro-scheme (per-frame scene + light uploads)
 - `Scheme::submit` + `Transaction::claim` + `Claim::consume` (swapchain present)
 - `SurfaceExchange` + offscreen depth `RenderTarget`
 - `with_shader_resources` / mosaic `with_parcel` + vertex/index buffer views
