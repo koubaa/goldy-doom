@@ -5,7 +5,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use goldy::types::{
     AddressMode, BufferKind, DepthFormat, DepthStencilState, FilterMode, IndexFormat, SamplerDesc,
-    SurfaceConfig, TextureFlags, TextureFormat, TextureKind,
+    SurfaceConfig, TargetLoad, TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
     Buffer, Context as GpuContext, Device, Instance, LayoutCheckable, Lease, LeaseRenderTarget,
@@ -197,10 +197,9 @@ impl Renderer {
             ShaderResourceSlot::Sampler(sampler),
         ];
 
-        let mut pass = scheme.render_pass("doom", scene_rt);
+        let mut pass = scheme.render_pass("doom", scene_rt, TargetLoad::Clear(goldy::Color::BLACK));
         pass.with_shader_resources(&shader_resources);
         pass.with_buffer_dependency(&level.geometry, NodeAccess::Read);
-        pass.clear(goldy::Color::BLACK);
         pass.clear_depth(1.0);
 
         if level.sky_index_count > 0 {

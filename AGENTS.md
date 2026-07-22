@@ -87,7 +87,6 @@ All shaders `import doom_common` which uses push constants to pass bindless reso
 2. **Light animation** — `lights.rs` is wired but the per-frame `light_levels` passed to `render_frame` are all `1.0`. Hook up the actual animated light values from `LightInfo`.
 3. **Sprite sorting** — Sprites currently rely on BSP order; add distance-based sort for correct sprite-on-sprite overlap.
 
-
 ## Key Goldy API Features This Will Stress
 - `RetainedPool` (parcels, mosaic geometry, textures)
 - `Scheme::render_pass` + indexed draws (sky, static, sprite batches)
