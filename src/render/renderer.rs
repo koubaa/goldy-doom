@@ -9,7 +9,7 @@ use goldy::types::{
 };
 use goldy::{
     Buffer, Context as GpuContext, Device, Instance, LayoutCheckable, Lease, LeaseRenderTarget,
-    NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, Scheme,
+    MemoryExchange, NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler, Scheme,
     ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SurfaceExchange, Texture,
     Transaction, Init, ordinal,
 };
@@ -17,9 +17,12 @@ use goldy::{
 /// Upload CPU bytes into a retained buffer parcel via a property-only micro-scheme dispatch.
 fn upload_parcel(ctx: &GpuContext, parcel: &Parcel, offset: u64, data: &[u8]) -> Result<()> {
     let mut upload = Scheme::new(ctx);
-    upload
-        .write_parcel(parcel, offset, data.to_vec())
-        .context("write_parcel")?;
+    let deposit = MemoryExchange::new(ctx)
+        .bind_deposit_buffer_at(&mut upload, parcel, offset, data.len() as u64)
+        .context("bind_deposit_buffer_at")?;
+    deposit
+        .write(&mut upload, 0, data)
+        .context("deposit write")?;
     upload.submit().context("upload scheme submit")?;
     Ok(())
 }
