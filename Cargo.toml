@@ -7,6 +7,10 @@ description = "DOOM renderer built on goldy — stress-testing a modern GPU libr
 [[bin]]
 name = "goldy-doom"
 
+[features]
+# Windows + NVIDIA: GOLDY_BACKEND=cuda cargo run --features cuda -- ...
+cuda = ["goldy/cuda"]
+
 [dependencies]
 goldy = { path = "../goldy" }
 winit = "0.30"
