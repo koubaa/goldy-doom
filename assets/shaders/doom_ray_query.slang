@@ -4,19 +4,6 @@
 import doom_common;
 import goldy_exp;
 
-struct RtUniforms {
-    uint width;
-    uint height;
-    float time;
-    float tiled_band_size;
-    float3 camera_pos;
-    float _pad2;
-    float4x4 inv_view_proj;
-    float2 atlas_size;
-    float2 flat_atlas_size;
-    float2 sky_rot;
-    float2 _pad3;
-};
 
 float3 sample_sky(
     float2 ndc,

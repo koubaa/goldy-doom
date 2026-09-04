@@ -9,14 +9,12 @@ use goldy::types::{
     IndexFormat, SamplerDesc, SurfaceConfig, TargetLoad, TextureFlags, TextureFormat, TextureKind,
 };
 use goldy::{
-    AccelerationStructure, AccelInstance, Buffer, ComputePipeline, Context as GpuContext, Device,
-    Instance, LayoutCheckable, Lease, LeaseRenderTarget, MemoryExchange, MeshPipeline,
-    MeshPipelineDesc, NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RetainedPool, Sampler,
-    Scheme, ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement, SurfaceExchange,
-    Texture, Transaction, Init, ordinal,
+    ordinal, AccelInstance, AccelerationStructure, Buffer, ComputePipeline, Context as GpuContext,
+    Device, Init, Instance, Lease, LeaseRenderTarget, MemoryExchange, MeshPipeline,
+    MeshPipelineDesc, NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RetainedPool,
+    Sampler, Scheme, ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement,
+    SurfaceExchange, Texture, Transaction,
 };
-
-
 
 /// Upload CPU bytes into a retained buffer parcel via a property-only micro-scheme dispatch.
 fn upload_parcel(ctx: &GpuContext, parcel: &Parcel, offset: u64, data: &[u8]) -> Result<()> {
@@ -33,9 +31,39 @@ fn upload_parcel(ctx: &GpuContext, parcel: &Parcel, offset: u64, data: &[u8]) ->
 use std::sync::Arc;
 use winit::window::Window;
 
-/// Must match the `SceneUniforms` struct in doom_common.slang exactly.
+fn register_doom_common(device: &Device, shader_dir: &std::path::Path) -> Result<()> {
+    let doom_common_src = std::fs::read_to_string(shader_dir.join("doom_common.slang"))
+        .context("Failed to read doom_common.slang")?;
+    let doom_common_lib = ShaderLibrary::from_source_with_gpu_types(
+        "doom_common",
+        &doom_common_src,
+        &[SceneUniforms::GPU_TYPE],
+    )
+    .context("Failed to build doom_common shader library")?;
+    device
+        .register_library(doom_common_lib)
+        .context("Failed to register doom_common shader library")?;
+    ShaderModule::validate_existing_gpu_types(
+        device,
+        r#"
+import doom_common;
+import goldy_exp;
+
+[goldy_compute]
+[numthreads(1, 1, 1)]
+void cs_main(SceneUniforms scene, ThreadId id) {
+    SceneUniforms s = get_scene(scene);
+}
+"#,
+        &[SceneUniforms::GPU_TYPE],
+    )
+    .context("SceneUniforms generated layout validation failed")?;
+    Ok(())
+}
+
+/// Scene/frame uniforms. Slang declaration is generated from this Rust type.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable, LayoutCheckable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, goldy::GpuType)]
 pub struct SceneUniforms {
     pub projection: [[f32; 4]; 4],
     pub modelview: [[f32; 4]; 4],
@@ -60,20 +88,22 @@ pub enum RenderMode {
     Mesh,
 }
 
-/// Per-frame uniforms for `--render ray-query` (must match doom_ray_query.slang).
+/// Per-frame uniforms for `--render ray-query`. Slang declaration is generated from this type.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, goldy::GpuType)]
 struct RtUniforms {
     width: u32,
     height: u32,
     time: f32,
     tiled_band_size: f32,
     camera_pos: [f32; 3],
+    #[gpu(padding)]
     _pad2: f32,
     inv_view_proj: [[f32; 4]; 4],
     atlas_size: [f32; 2],
     flat_atlas_size: [f32; 2],
     sky_rot: [f32; 2],
+    #[gpu(padding)]
     _pad3: [f32; 2],
 }
 
@@ -371,7 +401,6 @@ impl Renderer {
         let blas = level.blas.as_ref().context("BLAS")?;
         let tlas = level.tlas.as_ref().context("TLAS")?;
 
-
         let indices = level.accel_indices.as_ref();
         let index_arg = indices.map(|ib| (ib.whole(), level.accel_index_count));
         let mut scheme = Scheme::new(ctx);
@@ -384,9 +413,7 @@ impl Renderer {
             vert_stride,
             index_arg,
         )?;
-        let identity = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-        ];
+        let identity = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         scheme.build_tlas(
             tlas,
             &[AccelInstance {
@@ -397,9 +424,7 @@ impl Renderer {
             }],
         )?;
         let submission = scheme.submit().context("AS once submit")?;
-        submission
-            .wait_until_settled()
-            .context("AS once wait")?;
+        submission.wait_until_settled().context("AS once wait")?;
         Ok(())
     }
 
@@ -514,19 +539,14 @@ impl Renderer {
 
         match self.mode {
             RenderMode::RayQuery => {
-                let doom_common_src = std::fs::read_to_string(shader_dir.join("doom_common.slang"))
-                    .context("Failed to read doom_common.slang")?;
-                let doom_common_lib = ShaderLibrary::from_source("doom_common", &doom_common_src);
-                self.device
-                    .register_library(doom_common_lib)
-                    .context("Failed to register doom_common shader library")?;
+                register_doom_common(&self.device, &shader_dir)?;
 
                 let ray_src = std::fs::read_to_string(shader_dir.join("doom_ray_query.slang"))
                     .context("Failed to read doom_ray_query.slang")?;
                 let ray_shader = ShaderModule::from_slang_with_gpu_types(
                     &self.device,
                     &ray_src,
-                    &[StaticVertex::GPU_TYPE],
+                    &[StaticVertex::GPU_TYPE, RtUniforms::GPU_TYPE],
                 )
                 .context("Failed to compile doom_ray_query shader")?;
                 self.ray_pipeline = Some(
@@ -539,12 +559,7 @@ impl Renderer {
                 self.mesh_pipeline = None;
             }
             RenderMode::Raster | RenderMode::Mesh => {
-                let doom_common_src = std::fs::read_to_string(shader_dir.join("doom_common.slang"))
-                    .context("Failed to read doom_common.slang")?;
-                let doom_common_lib = ShaderLibrary::from_source("doom_common", &doom_common_src);
-                self.device
-                    .register_library(doom_common_lib)
-                    .context("Failed to register doom_common shader library")?;
+                register_doom_common(&self.device, &shader_dir)?;
 
                 let sky_src = std::fs::read_to_string(shader_dir.join("doom_sky.slang"))
                     .context("Failed to read doom_sky.slang")?;
@@ -597,13 +612,9 @@ impl Renderer {
                     let mesh_src =
                         std::fs::read_to_string(shader_dir.join("doom_static_mesh.slang"))
                             .context("Failed to read doom_static_mesh.slang")?;
-                    let mesh_shader = ShaderModule::from_slang_with_gpu_types_and_options(
+                    let mesh_shader = ShaderModule::from_slang_with_gpu_types(
                         &self.device,
                         &mesh_src,
-                        &[],
-                        &[],
-                        Default::default(),
-                        &[SceneUniforms::LAYOUT_CHECK],
                         &[StaticVertex::GPU_TYPE],
                     )
                     .context("Failed to compile doom_static_mesh shader")?;
@@ -622,21 +633,10 @@ impl Renderer {
                     );
                     self.static_pipeline = None;
                 } else {
-                    let static_src =
-                        std::fs::read_to_string(shader_dir.join("doom_static.slang"))
-                            .context("Failed to read doom_static.slang")?;
-                    let static_shader = ShaderModule::from_slang_with_options(
-                        &self.device,
-                        &static_src,
-                        &[],
-                        &[],
-                        Default::default(),
-                        &[SceneUniforms::LAYOUT_CHECK],
-                    )
-                    .context("Failed to compile doom_static shader")?;
-                    if goldy::layout_validation_enabled() {
-                        log::info!("SceneUniforms layout validated (GOLDY_VALIDATE_LAYOUTS=1)");
-                    }
+                    let static_src = std::fs::read_to_string(shader_dir.join("doom_static.slang"))
+                        .context("Failed to read doom_static.slang")?;
+                    let static_shader = ShaderModule::from_slang(&self.device, &static_src)
+                        .context("Failed to compile doom_static shader")?;
                     self.static_pipeline = Some(
                         RenderPipeline::new(
                             &self.device,
@@ -712,8 +712,7 @@ impl Renderer {
                     !mesh.static_indices.is_empty(),
                     "ray-query mode requires static level geometry"
                 );
-                let positions: Vec<[f32; 3]> =
-                    mesh.static_vertices.iter().map(|v| v.pos).collect();
+                let positions: Vec<[f32; 3]> = mesh.static_vertices.iter().map(|v| v.pos).collect();
                 let accel_positions = self
                     .retained_pool
                     .acquire_buffer_with_data_and_flags(
@@ -747,8 +746,7 @@ impl Renderer {
                     12,
                 )
                 .context("create BLAS")?;
-                let tlas =
-                    AccelerationStructure::tlas(&self.device, 1).context("create TLAS")?;
+                let tlas = AccelerationStructure::tlas(&self.device, 1).context("create TLAS")?;
 
                 let (wall_w, wall_h) = (wall_atlas.1[0] as u32, wall_atlas.1[1] as u32);
                 let wall_tex = self
@@ -1132,7 +1130,7 @@ impl Renderer {
             mesh_tri_count,
         });
 
-                if self.mode == RenderMode::RayQuery {
+        if self.mode == RenderMode::RayQuery {
             self.build_accel_once()?;
         }
         self.rerecord_scheme()?;

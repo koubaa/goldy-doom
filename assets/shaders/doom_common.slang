@@ -22,14 +22,6 @@ import goldy_exp;
 // Uniform data uploaded once per frame
 // ============================================================================
 
-struct SceneUniforms {
-    float4x4 projection;
-    float4x4 modelview;
-    float2   atlas_size;      // wall/sprite atlas dimensions in pixels
-    float2   flat_atlas_size; // flat (floor/ceiling) atlas dimensions in pixels
-    float    time;
-    float    tiled_band_size; // sky tiling parameter
-};
 
 // ============================================================================
 // Cross-platform resource access helpers
