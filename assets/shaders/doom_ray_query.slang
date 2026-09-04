@@ -18,20 +18,6 @@ struct RtUniforms {
     float2 _pad3;
 };
 
-// Must match render::vertex::StaticVertex / doom_static_mesh.slang.
-struct StaticVertex {
-    float3 pos;
-    float  _pad;
-    float2 atlas_uv;
-    float2 tile_uv;
-    float2 tile_size;
-    float  scroll_rate;
-    float  row_height;
-    uint   num_frames;
-    uint   light;
-    uint   use_flat_atlas;
-};
-
 float3 sample_sky(
     float2 ndc,
     RtUniforms u,

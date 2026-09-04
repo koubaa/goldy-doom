@@ -4,20 +4,6 @@
 import doom_common;
 import goldy_exp;
 
-// Must match render::vertex::StaticVertex (bytemuck / StructuredBuffer).
-struct StaticVertex {
-    float3 pos;
-    float  _pad; // matches Rust StaticVertex / HLSL float3 packing
-    float2 atlas_uv;
-    float2 tile_uv;
-    float2 tile_size;
-    float  scroll_rate;
-    float  row_height;
-    uint   num_frames;
-    uint   light;
-    uint   use_flat_atlas;
-};
-
 struct StaticVarying {
     float4 position       : SV_Position;
     float  dist           : TEXCOORD0;

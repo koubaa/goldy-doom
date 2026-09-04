@@ -523,8 +523,12 @@ impl Renderer {
 
                 let ray_src = std::fs::read_to_string(shader_dir.join("doom_ray_query.slang"))
                     .context("Failed to read doom_ray_query.slang")?;
-                let ray_shader = ShaderModule::from_slang(&self.device, &ray_src)
-                    .context("Failed to compile doom_ray_query shader")?;
+                let ray_shader = ShaderModule::from_slang_with_gpu_types(
+                    &self.device,
+                    &ray_src,
+                    &[StaticVertex::GPU_TYPE],
+                )
+                .context("Failed to compile doom_ray_query shader")?;
                 self.ray_pipeline = Some(
                     ComputePipeline::new(&self.device, &ray_shader)
                         .context("Failed to create ray-query compute pipeline")?,
@@ -593,13 +597,14 @@ impl Renderer {
                     let mesh_src =
                         std::fs::read_to_string(shader_dir.join("doom_static_mesh.slang"))
                             .context("Failed to read doom_static_mesh.slang")?;
-                    let mesh_shader = ShaderModule::from_slang_with_options(
+                    let mesh_shader = ShaderModule::from_slang_with_gpu_types_and_options(
                         &self.device,
                         &mesh_src,
                         &[],
                         &[],
                         Default::default(),
                         &[SceneUniforms::LAYOUT_CHECK],
+                        &[StaticVertex::GPU_TYPE],
                     )
                     .context("Failed to compile doom_static_mesh shader")?;
                     self.mesh_pipeline = Some(
