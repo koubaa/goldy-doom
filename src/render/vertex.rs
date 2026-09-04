@@ -6,6 +6,8 @@ use goldy::StructuredBufferElement;
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct StaticVertex {
     pub pos: [f32; 3],
+    /// Matches HLSL float3 register padding so BufRO/StructuredBuffer stride == size_of.
+    pub _pad: f32,
     pub atlas_uv: [f32; 2],
     pub tile_uv: [f32; 2],
     pub tile_size: [f32; 2],
@@ -21,6 +23,7 @@ impl StaticVertex {
     pub fn layout() -> VertexBufferLayout {
         VertexBufferLayout::from_formats::<Self>(&[
             VertexFormat::Float32x3, // pos
+            VertexFormat::Float32,   // _pad
             VertexFormat::Float32x2, // atlas_uv
             VertexFormat::Float32x2, // tile_uv
             VertexFormat::Float32x2, // tile_size

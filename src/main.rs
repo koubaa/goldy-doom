@@ -5,11 +5,11 @@ mod render;
 mod wad;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use log::info;
 use player::Player;
 use render::level_builder::LevelBuilder;
-use render::renderer::Renderer;
+use render::renderer::{RenderMode, Renderer};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use wad::tex::TextureDirectory;
@@ -34,6 +34,10 @@ struct Args {
     /// Level index to load (0-based)
     #[arg(short, long, default_value_t = 0)]
     level: usize,
+
+    /// Render path: raster (default), ray-query, or mesh. Missing GPU caps hard-fail.
+    #[arg(long, value_enum, default_value_t = RenderMode::Raster)]
+    render: RenderMode,
 }
 
 const FPS_LOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -46,6 +50,7 @@ fn main() -> Result<()> {
     info!("WAD: {:?}", args.wad);
     info!("Meta: {:?}", args.meta);
     info!("Level: {}", args.level);
+    info!("Render: {:?}", args.render);
 
     let archive = Archive::open(&args.wad, &args.meta).context("Failed to open WAD archive")?;
 
@@ -123,7 +128,7 @@ fn main() -> Result<()> {
     let event_loop = EventLoop::new().context("Failed to create event loop")?;
     let mut app = App {
         window: None,
-        renderer: Renderer::new()?,
+        renderer: Renderer::new(args.render)?,
         player: Player::new(start_pos, start_yaw),
         last_frame: Instant::now(),
         fps_window_start: Instant::now(),

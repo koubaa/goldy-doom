@@ -10,6 +10,7 @@ import goldy_exp;
 
 struct StaticVertexIn {
     float3 pos            : POSITION;
+    float  _pad           : TEXCOORD8;
     float2 atlas_uv       : TEXCOORD0;
     float2 tile_uv        : TEXCOORD1;
     float2 tile_size      : TEXCOORD2;
