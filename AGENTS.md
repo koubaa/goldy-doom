@@ -16,7 +16,9 @@ goldy-doom/
 │   ├── meta/doom.toml             # Level metadata (copied from rust-doom)
 │   └── shaders/
 │       ├── doom_common.slang      # Shared types, resource slots, palette lookup
-│       ├── doom_static.slang      # Wall + ceiling/floor geometry (vert + frag)
+│       ├── doom_static.slang
+│       ├── doom_ray_query.slang   # `--render ray-query` compute primary rays
+│       ├── doom_static_mesh.slang # `--render mesh` mesh-shader static geo      # Wall + ceiling/floor geometry (vert + frag)
 │       ├── doom_flat.slang        # Floor/ceiling variant (flat atlas, no alpha)
 │       ├── doom_sky.slang         # Sky rendering (cylindrical projection)
 │       └── doom_sprite.slang      # Billboarded sprites (vert + frag)
@@ -52,8 +54,22 @@ goldy-doom/
 
 ## Running
 ```bash
+# Default raster path
 cargo run -- --wad doom1.wad --meta assets/meta/doom.toml --level 0
+
+# Mutually exclusive render variants (hard-fail at startup if GPU caps are missing):
+cargo run -- --wad doom1.wad --level 0 --render raster
+cargo run -- --wad doom1.wad --level 0 --render ray-query   # needs DeviceCapabilities::ray_query; not WebGPU
+cargo run -- --wad doom1.wad --level 0 --render mesh        # needs DeviceCapabilities::mesh_shaders
 ```
+
+### `--render` pass/fail
+| Mode | Pass | Fail |
+|------|------|------|
+| `raster` | Textured E1M1 walls/floors/sky/sprites | (baseline) |
+| `ray-query` | Barycentric-colored rooms; camera still moves | All-black while WASD works; or process exits before a window if no RT |
+| `mesh` | Static walls/floors match raster (textured) | Holes in walls; or startup cap error |
+
 Opens a window and renders using goldy. Run with a DOOM WAD to see the level.
 
 ## Shader Resource Layout (defined in doom_common.slang)
