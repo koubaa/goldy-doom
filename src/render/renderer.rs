@@ -38,6 +38,7 @@ fn upload_elements<T: StructuredBufferElement>(
     let encoded = T::gpu_encode_slice(data);
     upload_parcel(ctx, parcel, offset, encoded.as_ref())
 }
+
 use std::sync::Arc;
 use winit::window::Window;
 
