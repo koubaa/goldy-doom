@@ -6,12 +6,11 @@ import doom_common;
 import goldy_exp;
 
 // ============================================================================
-// Vertex layout — must match render::vertex::SkyVertex (bytemuck)
+// Vertex layout — must match render::vertex::SkyVertex GpuType IA
 // ============================================================================
 
 struct SkyVertexIn {
-    float3 pos  : POSITION;
-    float  _pad : TEXCOORD0;
+    float3 pos : POSITION;
 };
 
 struct SkyVarying {

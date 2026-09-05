@@ -243,7 +243,6 @@ impl LevelVisitor for LevelBuilder {
         for &v in poly.vertices {
             self.sky_vertices.push(SkyVertex {
                 pos: [v.x, poly.height, v.y],
-                _pad: 0.0,
             });
         }
         self.push_sky_poly(poly.vertices.len());
@@ -253,7 +252,6 @@ impl LevelVisitor for LevelBuilder {
         for &v in poly.vertices.iter().rev() {
             self.sky_vertices.push(SkyVertex {
                 pos: [v.x, poly.height, v.y],
-                _pad: 0.0,
             });
         }
         self.push_sky_poly(poly.vertices.len());
@@ -264,19 +262,15 @@ impl LevelVisitor for LevelBuilder {
         let (low, high) = quad.height_range;
         self.sky_vertices.push(SkyVertex {
             pos: [v1.x, low, v1.y],
-            _pad: 0.0,
         });
         self.sky_vertices.push(SkyVertex {
             pos: [v2.x, low, v2.y],
-            _pad: 0.0,
         });
         self.sky_vertices.push(SkyVertex {
             pos: [v2.x, high, v2.y],
-            _pad: 0.0,
         });
         self.sky_vertices.push(SkyVertex {
             pos: [v1.x, high, v1.y],
-            _pad: 0.0,
         });
         self.push_sky_quad();
     }
@@ -307,7 +301,6 @@ impl LevelVisitor for LevelBuilder {
             tile_size: bounds.size,
             num_frames: 1,
             light,
-            _pad: 0,
         };
         self.decor_vertices
             .push(mk(decor.low, -hw, 0.0, bounds.size[1]));

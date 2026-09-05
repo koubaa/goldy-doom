@@ -7,7 +7,7 @@ import doom_common;
 import goldy_exp;
 
 // ============================================================================
-// Vertex layout — must match render::vertex::SpriteVertex (bytemuck)
+// Vertex layout — must match render::vertex::SpriteVertex GpuType IA
 // ============================================================================
 
 struct SpriteVertexIn {
@@ -18,7 +18,6 @@ struct SpriteVertexIn {
     float  local_x    : TEXCOORD3;
     uint   num_frames : TEXCOORD4;
     uint   light      : TEXCOORD5;
-    uint   _pad       : TEXCOORD6;
 };
 
 struct SpriteVarying {

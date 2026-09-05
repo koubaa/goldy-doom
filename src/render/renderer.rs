@@ -578,7 +578,9 @@ impl Renderer {
                         &sky_shader,
                         &sky_shader,
                         &RenderPipelineDesc {
-                            vertex_layout: SkyVertex::layout(),
+                            vertex_layout: SkyVertex::GPU_TYPE
+                                .vertex_buffer_layout()
+                                .context("SkyVertex raster layout")?,
                             target_format,
                             depth_stencil: sky_depth,
                             ..Default::default()
@@ -592,7 +594,9 @@ impl Renderer {
                         &sprite_shader,
                         &sprite_shader,
                         &RenderPipelineDesc {
-                            vertex_layout: SpriteVertex::layout(),
+                            vertex_layout: SpriteVertex::GPU_TYPE
+                                .vertex_buffer_layout()
+                                .context("SpriteVertex raster layout")?,
                             target_format,
                             depth_stencil: sprite_depth,
                             ..Default::default()
@@ -636,7 +640,9 @@ impl Renderer {
                             &static_shader,
                             &static_shader,
                             &RenderPipelineDesc {
-                                vertex_layout: StaticVertex::layout(),
+                                vertex_layout: StaticVertex::GPU_TYPE
+                                    .vertex_buffer_layout()
+                                    .context("StaticVertex raster layout")?,
                                 target_format,
                                 depth_stencil: Some(DepthStencilState::default()),
                                 ..Default::default()

@@ -5,7 +5,7 @@ import doom_common;
 import goldy_exp;
 
 // ============================================================================
-// Vertex layout — must match render::vertex::StaticVertex (bytemuck)
+// Vertex layout — must match render::vertex::StaticVertex GpuType IA
 // ============================================================================
 
 struct StaticVertexIn {
