@@ -28,6 +28,16 @@ fn upload_parcel(ctx: &GpuContext, parcel: &Parcel, offset: u64, data: &[u8]) ->
     upload.submit().context("upload scheme submit")?;
     Ok(())
 }
+
+fn upload_elements<T: StructuredBufferElement>(
+    ctx: &GpuContext,
+    parcel: &Parcel,
+    offset: u64,
+    data: &[T],
+) -> Result<()> {
+    let encoded = T::gpu_encode_slice(data);
+    upload_parcel(ctx, parcel, offset, encoded.as_ref())
+}
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -73,8 +83,6 @@ pub struct SceneUniforms {
     pub tiled_band_size: f32,
 }
 
-impl StructuredBufferElement for SceneUniforms {}
-
 /// Mutually exclusive GPU path selected by `--render`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum RenderMode {
@@ -97,17 +105,11 @@ struct RtUniforms {
     time: f32,
     tiled_band_size: f32,
     camera_pos: [f32; 3],
-    #[gpu(padding)]
-    _pad2: f32,
     inv_view_proj: [[f32; 4]; 4],
     atlas_size: [f32; 2],
     flat_atlas_size: [f32; 2],
     sky_rot: [f32; 2],
-    #[gpu(padding)]
-    _pad3: [f32; 2],
 }
-
-impl StructuredBufferElement for RtUniforms {}
 
 struct LevelGpuResources {
     /// Mosaic sky/sprite/(raster-static) geometry. `None` in ray-query mode.
@@ -221,15 +223,8 @@ impl Renderer {
         let mut retained_pool = RetainedPool::new(device.clone());
 
         let scene_uniforms = SceneUniforms::zeroed();
-        let scene_bytes = bytemuck::bytes_of(&scene_uniforms);
         let scene_buf = retained_pool
-            .acquire_buffer(
-                scene_bytes.len() as u64,
-                BufferKind::Broadcast,
-                Some(std::mem::size_of::<SceneUniforms>() as u32),
-                BufferFlags::empty(),
-                Some(scene_bytes),
-            )
+            .acquire_buffer_with_data(&[scene_uniforms], BufferKind::Broadcast)
             .context("Failed to create scene uniform buffer")?;
 
         let initial_lights: Vec<f32> = vec![1.0; 256];
@@ -250,12 +245,10 @@ impl Renderer {
                 time: 0.0,
                 tiled_band_size: 0.0,
                 camera_pos: [0.0; 3],
-                _pad2: 0.0,
                 inv_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
                 atlas_size: [1.0, 1.0],
                 flat_atlas_size: [1.0, 1.0],
                 sky_rot: [0.0, 0.0],
-                _pad3: [0.0, 0.0],
             };
             Some(
                 retained_pool
@@ -1176,15 +1169,13 @@ impl Renderer {
                     time,
                     tiled_band_size: level.tiled_band_size,
                     camera_pos: camera_pos.to_array(),
-                    _pad2: 0.0,
                     inv_view_proj: inv_view_proj.to_cols_array_2d(),
                     atlas_size: level.wall_atlas_size,
                     flat_atlas_size: level.flat_atlas_size,
                     sky_rot,
-                    _pad3: [0.0, 0.0],
                 };
                 let rt_buf = self.rt_buf.as_ref().context("rt uniforms")?;
-                upload_parcel(ctx, &*rt_buf, 0, bytemuck::bytes_of(&uniforms))?;
+                upload_elements(ctx, &*rt_buf, 0, &[uniforms])?;
                 if light_levels.len() >= 256 {
                     upload_parcel(
                         ctx,
@@ -1203,7 +1194,7 @@ impl Renderer {
                     time,
                     tiled_band_size: level.tiled_band_size,
                 };
-                upload_parcel(ctx, &*self.scene_buf, 0, bytemuck::bytes_of(&uniforms))?;
+                upload_elements(ctx, &*self.scene_buf, 0, &[uniforms])?;
                 if light_levels.len() >= 256 {
                     upload_parcel(
                         ctx,

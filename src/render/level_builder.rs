@@ -171,7 +171,6 @@ impl LevelVisitor for LevelBuilder {
 
         let mk = |xz: Vec2, y: f32, u: f32, v: f32| StaticVertex {
             pos: [xz.x, y, xz.y],
-            _pad: 0.0,
             atlas_uv: bounds.pos,
             tile_uv: [u, v],
             tile_size: bounds.size,
@@ -201,7 +200,6 @@ impl LevelVisitor for LevelBuilder {
         for &v in poly.vertices {
             self.static_vertices.push(StaticVertex {
                 pos: [v.x, poly.height, v.y],
-                _pad: 0.0,
                 atlas_uv: bounds.pos,
                 tile_uv: [-v.x * 100.0, -v.y * 100.0],
                 tile_size: bounds.size,
@@ -228,7 +226,6 @@ impl LevelVisitor for LevelBuilder {
         for &v in poly.vertices.iter().rev() {
             self.static_vertices.push(StaticVertex {
                 pos: [v.x, poly.height, v.y],
-                _pad: 0.0,
                 atlas_uv: bounds.pos,
                 tile_uv: [-v.x * 100.0, -v.y * 100.0],
                 tile_size: bounds.size,
