@@ -4,19 +4,36 @@
 import goldy_exp;
 
 // ============================================================================
-// Virtual-main parameter layout
+// Pipeline payload — defined once, linked structurally by semantic
 // ============================================================================
-// Every entry point receives these 7 typed wrapper params in declaration order:
+// Raster IA uses `StaticVertexIn` in doom_static.slang (not this GpuType storage
+// layout). Mesh shaders read `BufRO<StaticVertex>` instead of vertex attributes.
+
+struct StaticVarying {
+    float4 position       : SV_Position;
+    float  dist           : TEXCOORD0;
+    float2 tile_uv        : TEXCOORD1;
+    float2 atlas_uv       : TEXCOORD2;
+    float2 tile_size      : TEXCOORD3;
+    float  light          : TEXCOORD4;
+    uint   use_flat_atlas : TEXCOORD5;
+};
+
+// ============================================================================
+// Virtual-main resources
+// ============================================================================
+// Each graphics stage lists only the parameters it reads. Goldy merges them by
+// name into one pipeline contract and remaps wrappers onto shared push slots.
 //
-//   SceneUniforms        scene   — SceneUniforms constant buffer (implicit broadcast)
+//   SceneUniforms        scene   — SceneUniforms constant buffer
 //   BufRO<float>         lights  — Light levels buffer (read-only)
-//   Interpolated<float4>     wall    — Wall/sprite atlas Texture2D
-//   Interpolated<float4>     flat    — Flat (floor/ceiling) atlas Texture2D
-//   Interpolated<float4>     palette — Palette Texture2D
-//   Interpolated<float4>     sky     — Sky Texture2D
-//   Filter                   nearest — Sampler
+//   Interpolated<float4> wall    — Wall/sprite atlas
+//   Interpolated<float4> flat    — Flat (floor/ceiling) atlas
+//   Interpolated<float4> palette — Palette
+//   Interpolated<float4> sky     — Sky
+//   Filter               nearest — Sampler
 //
-// Rust side: goldy virtual-main dispatch fills these from the bound resource table.
+// Mesh-only extras: BufRO<StaticVertex> static_verts, BufRO<uint> static_indices.
 
 // ============================================================================
 // Uniform data uploaded once per frame

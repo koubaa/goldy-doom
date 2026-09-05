@@ -11,9 +11,8 @@ use goldy::types::{
 use goldy::{
     ordinal, AccelInstance, AccelerationStructure, Buffer, ComputePipeline, Context as GpuContext,
     Device, Init, Instance, Lease, LeaseRenderTarget, MemoryExchange, MeshPipeline,
-    MeshPipelineDesc, NodeAccess, Parcel, RenderPipeline, RenderPipelineDesc, RetainedPool,
-    Sampler, Scheme, ShaderLibrary, ShaderModule, ShaderResourceSlot, StructuredBufferElement,
-    SurfaceExchange, Texture, Transaction,
+    NodeAccess, Parcel, RenderPipeline, RetainedPool, Sampler, Scheme, ShaderBinding, ShaderLibrary,
+    ShaderModule, StructuredBufferElement, SurfaceExchange, Texture, Transaction,
 };
 
 /// Upload CPU bytes into a retained buffer parcel via a property-only micro-scheme dispatch.
@@ -307,49 +306,25 @@ impl Renderer {
         let palette = level.palette.as_ref().context("palette")?;
         let sky_tex = level.sky_texture.as_ref().context("sky texture")?;
 
-        let mut slots = vec![
-            ShaderResourceSlot::Parcel {
-                parcel: &*scene_buf,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &*light_buf,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &*wall,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &*flat,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &*palette,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Parcel {
-                parcel: &*sky_tex,
-                access: NodeAccess::Read,
-            },
-            ShaderResourceSlot::Sampler(sampler),
+        let mut bindings = vec![
+            ShaderBinding::read("scene", &*scene_buf),
+            ShaderBinding::read("lights", &*light_buf),
+            ShaderBinding::read("wall", &*wall),
+            ShaderBinding::read("flat", &*flat),
+            ShaderBinding::read("palette", &*palette),
+            ShaderBinding::read("sky", &*sky_tex),
+            ShaderBinding::sampler("nearest", sampler),
         ];
 
         if mesh_mode {
             let mv = level.mesh_verts.as_ref().context("mesh verts")?;
             let mi = level.mesh_indices.as_ref().context("mesh indices")?;
-            slots.push(ShaderResourceSlot::Parcel {
-                parcel: &*mv,
-                access: NodeAccess::Read,
-            });
-            slots.push(ShaderResourceSlot::Parcel {
-                parcel: &*mi,
-                access: NodeAccess::Read,
-            });
+            bindings.push(ShaderBinding::read("static_verts", &*mv));
+            bindings.push(ShaderBinding::read("static_indices", &*mi));
         }
 
         let mut pass = scheme.render_pass("doom", scene_rt, TargetLoad::Clear(goldy::Color::BLACK));
-        pass.with_shader_resources(&slots);
+        pass.with_shader_bindings(&bindings);
         pass.with_buffer_dependency(geometry, NodeAccess::Read);
         pass.clear_depth(1.0);
 
@@ -574,36 +549,32 @@ impl Renderer {
                 });
 
                 self.sky_pipeline = Some(
-                    RenderPipeline::new(
-                        &self.device,
-                        &sky_shader,
-                        &sky_shader,
-                        &RenderPipelineDesc {
-                            vertex_layout: SkyVertex::GPU_TYPE
+                    RenderPipeline::builder(&self.device)
+                        .vertex(&sky_shader)
+                        .fragment(&sky_shader)
+                        .vertex_layout(
+                            SkyVertex::GPU_TYPE
                                 .vertex_buffer_layout()
                                 .context("SkyVertex raster layout")?,
-                            target_format,
-                            depth_stencil: sky_depth,
-                            ..Default::default()
-                        },
-                    )
-                    .context("Failed to create sky pipeline")?,
+                        )
+                        .target_format(target_format)
+                        .depth_stencil(sky_depth)
+                        .build()
+                        .context("Failed to create sky pipeline")?,
                 );
                 self.sprite_pipeline = Some(
-                    RenderPipeline::new(
-                        &self.device,
-                        &sprite_shader,
-                        &sprite_shader,
-                        &RenderPipelineDesc {
-                            vertex_layout: SpriteVertex::GPU_TYPE
+                    RenderPipeline::builder(&self.device)
+                        .vertex(&sprite_shader)
+                        .fragment(&sprite_shader)
+                        .vertex_layout(
+                            SpriteVertex::GPU_TYPE
                                 .vertex_buffer_layout()
                                 .context("SpriteVertex raster layout")?,
-                            target_format,
-                            depth_stencil: sprite_depth,
-                            ..Default::default()
-                        },
-                    )
-                    .context("Failed to create sprite pipeline")?,
+                        )
+                        .target_format(target_format)
+                        .depth_stencil(sprite_depth)
+                        .build()
+                        .context("Failed to create sprite pipeline")?,
                 );
 
                 if self.mode == RenderMode::Mesh {
@@ -617,17 +588,13 @@ impl Renderer {
                     )
                     .context("Failed to compile doom_static_mesh shader")?;
                     self.mesh_pipeline = Some(
-                        MeshPipeline::new(
-                            &self.device,
-                            &MeshPipelineDesc {
-                                mesh: &mesh_shader,
-                                fragment: &mesh_shader,
-                                amplification: None,
-                                target_format,
-                                depth_stencil: Some(DepthStencilState::default()),
-                            },
-                        )
-                        .context("Failed to create static mesh pipeline")?,
+                        MeshPipeline::builder(&self.device)
+                            .mesh(&mesh_shader)
+                            .fragment(&mesh_shader)
+                            .target_format(target_format)
+                            .depth_stencil(Some(DepthStencilState::default()))
+                            .build()
+                            .context("Failed to create static mesh pipeline")?,
                     );
                     self.static_pipeline = None;
                 } else {
@@ -636,20 +603,18 @@ impl Renderer {
                     let static_shader = ShaderModule::from_slang(&self.device, &static_src)
                         .context("Failed to compile doom_static shader")?;
                     self.static_pipeline = Some(
-                        RenderPipeline::new(
-                            &self.device,
-                            &static_shader,
-                            &static_shader,
-                            &RenderPipelineDesc {
-                                vertex_layout: StaticVertex::GPU_TYPE
+                        RenderPipeline::builder(&self.device)
+                            .vertex(&static_shader)
+                            .fragment(&static_shader)
+                            .vertex_layout(
+                                StaticVertex::GPU_TYPE
                                     .vertex_buffer_layout()
                                     .context("StaticVertex raster layout")?,
-                                target_format,
-                                depth_stencil: Some(DepthStencilState::default()),
-                                ..Default::default()
-                            },
-                        )
-                        .context("Failed to create static pipeline")?,
+                            )
+                            .target_format(target_format)
+                            .depth_stencil(Some(DepthStencilState::default()))
+                            .build()
+                            .context("Failed to create static pipeline")?,
                     );
                     self.mesh_pipeline = None;
                 }

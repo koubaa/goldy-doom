@@ -4,16 +4,6 @@
 import doom_common;
 import goldy_exp;
 
-struct StaticVarying {
-    float4 position       : SV_Position;
-    float  dist           : TEXCOORD0;
-    float2 tile_uv        : TEXCOORD1;
-    float2 atlas_uv       : TEXCOORD2;
-    float2 tile_size      : TEXCOORD3;
-    float  light          : TEXCOORD4;
-    uint   use_flat_atlas : TEXCOORD5;
-};
-
 StaticVarying shade_vertex(SceneUniforms scene_data, BufRO<float> lights, StaticVertex input) {
     StaticVarying output;
     output.tile_uv = input.tile_uv + float2(scene_data.time * input.scroll_rate, 0.0);
@@ -37,11 +27,6 @@ StaticVarying shade_vertex(SceneUniforms scene_data, BufRO<float> lights, Static
 void mesh_main(
     SceneUniforms scene,
     BufRO<float> lights,
-    Interpolated<float4> wall,
-    Interpolated<float4> flat,
-    Interpolated<float4> palette,
-    Interpolated<float4> sky,
-    Filter nearest,
     BufRO<StaticVertex> static_verts,
     BufRO<uint> static_indices,
     out vertices StaticVarying verts[192],
@@ -68,10 +53,9 @@ void mesh_main(
 
 [goldy_fragment]
 float4 fs_main(
-    SceneUniforms scene, BufRO<float> lights,
+    SceneUniforms scene,
     Interpolated<float4> wall, Interpolated<float4> flat,
-    Interpolated<float4> palette, Interpolated<float4> sky,
-    Filter nearest,
+    Interpolated<float4> palette, Filter nearest,
     StaticVarying input
 ) : SV_Target {
     SceneUniforms scene_data = get_scene(scene);

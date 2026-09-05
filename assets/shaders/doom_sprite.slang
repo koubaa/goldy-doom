@@ -36,9 +36,6 @@ struct SpriteVarying {
 [goldy_vertex]
 SpriteVarying vs_main(
     SceneUniforms scene, BufRO<float> lights,
-    Interpolated<float4> wall, Interpolated<float4> flat,
-    Interpolated<float4> palette, Interpolated<float4> sky,
-    Filter nearest,
     SpriteVertexIn input
 ) {
     SceneUniforms scene_data = get_scene(scene);
@@ -66,10 +63,8 @@ SpriteVarying vs_main(
 
 [goldy_fragment]
 float4 fs_main(
-    SceneUniforms scene, BufRO<float> lights,
-    Interpolated<float4> wall, Interpolated<float4> flat,
-    Interpolated<float4> palette, Interpolated<float4> sky,
-    Filter nearest,
+    SceneUniforms scene,
+    Interpolated<float4> wall, Interpolated<float4> palette, Filter nearest,
     SpriteVarying input
 ) : SV_Target {
     SceneUniforms scene_data = get_scene(scene);
